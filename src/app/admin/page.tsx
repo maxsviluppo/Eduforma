@@ -17,7 +17,7 @@ const stats = [
 const modules = [
   {
     title: "Calendario corsi",
-    text: "Crea corsi, lezioni, orari e aule.",
+    text: "Crea corsi, lezioni, orari, aule, docenti e modalità DAD/aula.",
     href: "/admin/calendario",
     icon: CalendarDays,
   },

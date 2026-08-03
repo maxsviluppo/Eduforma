@@ -1,10 +1,10 @@
-import PlaceholderPage from "@/components/PlaceholderPage";
+import type { Metadata } from "next";
+import AdminCalendarClient from "./AdminCalendarClient";
 
-export default function Page() {
-  return (
-    <PlaceholderPage
-      title="Calendario e orari"
-      text="Qui creerai corsi, lezioni, aule e disponibilità. Lo sviluppiamo nel prossimo step."
-    />
-  );
+export const metadata: Metadata = {
+  title: "Calendario corsi",
+};
+
+export default function AdminCalendarioPage() {
+  return <AdminCalendarClient />;
 }

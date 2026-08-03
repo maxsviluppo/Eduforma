@@ -3,6 +3,7 @@
 import { AppShell } from "@/components/AppShell";
 import {
   BookOpen,
+  CalendarDays,
   ClipboardCheck,
   LayoutDashboard,
   MessageSquare,
@@ -12,6 +13,7 @@ import {
 
 const nav = [
   { href: "/docente", label: "Home", icon: LayoutDashboard },
+  { href: "/docente/calendario", label: "Calendario", icon: CalendarDays },
   { href: "/docente/corsi", label: "Corsi", icon: BookOpen },
   { href: "/docente/materiali", label: "Materiali", icon: Upload },
   { href: "/docente/dad", label: "DAD", icon: Video },
