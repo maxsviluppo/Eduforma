@@ -23,6 +23,7 @@ export function AppShell({
   mobileHint?: string;
 }) {
   const pathname = usePathname();
+  const cols = Math.min(Math.max(nav.length, 2), 5);
 
   return (
     <div className="scene-gradient min-h-screen">
@@ -35,7 +36,12 @@ export function AppShell({
           <nav className="mt-3 flex flex-1 flex-col gap-1">
             {nav.map((item) => {
               const Icon = item.icon;
-              const active = pathname === item.href;
+              const active =
+                pathname === item.href ||
+                (item.href !== "/admin" &&
+                  item.href !== "/docente" &&
+                  item.href !== "/studente" &&
+                  pathname.startsWith(item.href));
               return (
                 <Link
                   key={item.href}
@@ -55,7 +61,7 @@ export function AppShell({
           </Link>
         </aside>
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col pb-20 lg:pb-0">
           <header className="sticky top-0 z-20 flex items-center justify-between border-b border-line/60 bg-white/70 px-4 py-3 backdrop-blur-xl lg:hidden">
             <BrandMark compact href="/" />
             <span className="rounded-full bg-teal/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-deep">
@@ -66,28 +72,41 @@ export function AppShell({
           <main className="flex-1 px-4 py-5 md:px-7 md:py-7">{children}</main>
 
           {mobileHint && (
-            <p className="px-4 pb-4 text-center text-[11px] text-ink-soft lg:hidden">
+            <p className="px-4 pb-3 text-center text-[11px] text-ink-soft lg:hidden">
               {mobileHint}
             </p>
           )}
 
-          <nav className="sticky bottom-0 z-20 grid grid-cols-4 gap-1 border-t border-line/60 bg-white/85 px-2 py-2 backdrop-blur-xl lg:hidden">
-            {nav.slice(0, 4).map((item) => {
-              const Icon = item.icon;
-              const active = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold ${
-                    active ? "bg-teal/10 text-teal-deep" : "text-ink-soft"
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              );
-            })}
+          <nav
+            className="fixed bottom-0 left-0 right-0 z-20 border-t border-line/60 bg-white/90 px-2 py-2 backdrop-blur-xl lg:hidden"
+            style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+          >
+            <div
+              className="mx-auto grid max-w-lg gap-1"
+              style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+            >
+              {nav.map((item) => {
+                const Icon = item.icon;
+                const active =
+                  pathname === item.href ||
+                  (item.href !== "/admin" &&
+                    item.href !== "/docente" &&
+                    item.href !== "/studente" &&
+                    pathname.startsWith(item.href));
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`flex flex-col items-center gap-1 rounded-xl px-1 py-2.5 text-[10px] font-semibold ${
+                      active ? "bg-teal/10 text-teal-deep" : "text-ink-soft"
+                    }`}
+                  >
+                    <Icon className="h-5 w-5" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
           </nav>
         </div>
       </div>

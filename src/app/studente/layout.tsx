@@ -1,20 +1,11 @@
 "use client";
 
 import { AppShell } from "@/components/AppShell";
-import {
-  BookOpen,
-  Download,
-  Home,
-  PlayCircle,
-  UserRound,
-} from "lucide-react";
+import { BookOpen, Home } from "lucide-react";
 
 const nav = [
   { href: "/studente", label: "Home", icon: Home },
-  { href: "/studente/corsi", label: "Corsi", icon: BookOpen },
-  { href: "/studente/video", label: "Video", icon: PlayCircle },
-  { href: "/studente/materiali", label: "File", icon: Download },
-  { href: "/studente/profilo", label: "Profilo", icon: UserRound },
+  { href: "/studente/corsi", label: "Calendario", icon: BookOpen },
 ];
 
 export default function StudenteLayout({ children }: { children: React.ReactNode }) {
@@ -22,7 +13,7 @@ export default function StudenteLayout({ children }: { children: React.ReactNode
     <AppShell
       roleLabel="Area Studente"
       nav={nav}
-      mobileHint="Ottimizzato per lezioni in mobilità — play e download rapidi"
+      mobileHint="Lezioni e calendario sempre a portata di tap"
     >
       {children}
     </AppShell>

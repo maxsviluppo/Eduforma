@@ -1,53 +1,93 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
+  AlertTriangle,
   Building2,
   CalendarDays,
+  CheckCircle2,
   Clock3,
+  FileSpreadsheet,
   GraduationCap,
+  Pencil,
   Plus,
   RefreshCw,
+  Trash2,
   Users,
-  Video,
 } from "lucide-react";
 import { useCalendar } from "@/lib/calendar/CalendarProvider";
 import type { Lesson, Modality } from "@/lib/calendar/types";
+import {
+  STATUS_LABELS,
+  courseTeacherIds,
+  findOverlapsForDraft,
+  isMorningLesson,
+  toIsoDate,
+} from "@/lib/calendar/types";
 import { scheduledHoursForCourse } from "@/lib/calendar/demo-data";
+import { parseCalendarSpreadsheet, readSpreadsheetFile } from "@/lib/calendar/import";
+import type { ImportPreview } from "@/lib/calendar/CalendarProvider";
+import { ConfirmModal, OverlapWarningModal } from "@/components/calendar/ConfirmModal";
+import { CourseCreateModal } from "@/components/calendar/CourseCreateModal";
+import { MonthCalendar } from "@/components/calendar/MonthCalendar";
 import { ModalityBadge } from "@/components/calendar/ModalityBadge";
 import { SimulationLinksBanner } from "@/components/calendar/SimulationLinksBanner";
-import { WeekCalendarGrid } from "@/components/calendar/WeekCalendarGrid";
 
-type Tab = "calendario" | "nuovo-corso" | "risorse";
+type Tab = "calendario" | "corsi" | "anagrafiche" | "import";
 
 export default function AdminCalendarClient() {
+  const searchParams = useSearchParams();
   const {
     state,
-    createCourseWithSchedule,
+    overlaps,
+    concludeCourse,
+    deleteCourse,
     addTeacher,
     addRoom,
+    updateSchool,
+    updateLesson,
+    deleteLesson,
+    applyImport,
     resetDemo,
     getCourse,
     getRoom,
     getTeacher,
+    getSchool,
+    getLessonsForDate,
   } = useCalendar();
 
+  const now = new Date();
   const [tab, setTab] = useState<Tab>("calendario");
-  const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth());
+  const [selectedDate, setSelectedDate] = useState<string | null>(toIsoDate(now));
+  const [editingLesson, setEditingLesson] = useState<Lesson | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteCourseId, setDeleteCourseId] = useState<string | null>(null);
+  const [overlapModal, setOverlapModal] = useState<{
+    teacherName: string;
+    date: string;
+    details: string[];
+    proceed: () => void;
+  } | null>(null);
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [highlightTeacherId, setHighlightTeacherId] = useState<string>("");
 
-  const [courseForm, setCourseForm] = useState({
-    title: "",
-    totalHours: 16,
-    teacherId: state.teachers[0]?.id ?? "",
-    studentIds: [] as string[],
-    modality: "ibrida" as Modality,
-    roomId: state.rooms[0]?.id ?? "",
-    sessionsCount: 4,
+  const [newTeacher, setNewTeacher] = useState({
+    name: "",
+    email: "",
+    specialty: "",
   });
-
-  const [newTeacher, setNewTeacher] = useState({ name: "", email: "", specialty: "" });
   const [newRoom, setNewRoom] = useState({ name: "", capacity: 20 });
+  const [schoolForm, setSchoolForm] = useState({ name: "", address: "", city: "" });
+
+  const dayLessons = useMemo(
+    () => (selectedDate ? getLessonsForDate(selectedDate) : []),
+    [selectedDate, getLessonsForDate, state.lessons]
+  );
 
   const stats = useMemo(
     () => ({
@@ -56,74 +96,165 @@ export default function AdminCalendarClient() {
       courses: state.courses.length,
       lessons: state.lessons.length,
       students: state.students.length,
-      totalHours: state.courses.reduce((s, c) => s + c.totalHours, 0),
+      schools: state.schools.length,
     }),
     [state]
   );
 
-  const handleCreateCourse = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!courseForm.title.trim() || !courseForm.teacherId) return;
+  const overlapDates = useMemo(
+    () => [...new Set(overlaps.map((o) => o.date))],
+    [overlaps]
+  );
 
-    createCourseWithSchedule({
-      ...courseForm,
-      roomId: courseForm.modality === "dad" ? undefined : courseForm.roomId,
-    });
-
-    setCourseForm((f) => ({ ...f, title: "", studentIds: [] }));
+  const goToOverlapDay = (date: string, teacherId?: string) => {
     setTab("calendario");
+    setSelectedDate(date);
+    const d = new Date(`${date}T12:00:00`);
+    setYear(d.getFullYear());
+    setMonth(d.getMonth());
+    if (teacherId) setHighlightTeacherId(teacherId);
   };
 
-  const toggleStudent = (id: string) => {
-    setCourseForm((f) => ({
-      ...f,
-      studentIds: f.studentIds.includes(id)
-        ? f.studentIds.filter((s) => s !== id)
-        : [...f.studentIds, id],
-    }));
+  useEffect(() => {
+    const date = searchParams.get("date");
+    if (!date) return;
+    goToOverlapDay(date, searchParams.get("teacher") ?? undefined);
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const runWithOverlapCheck = (
+    draft: Pick<Lesson, "teacherId" | "date" | "startTime" | "endTime"> & { id?: string },
+    apply: () => void
+  ) => {
+    const overlap = findOverlapsForDraft(state.lessons, state.teachers, draft, draft.id);
+    if (overlap) {
+      const details = overlap.lessons.map((l) => {
+        const c = getCourse(l.courseId);
+        return `${l.startTime}–${l.endTime} · ${l.title} (${c?.title ?? "corso"})`;
+      });
+      setOverlapModal({
+        teacherName: overlap.teacherName,
+        date: overlap.date,
+        details,
+        proceed: () => {
+          setOverlapModal(null);
+          apply();
+        },
+      });
+      return;
+    }
+    apply();
+  };
+
+  const handleSaveLesson = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingLesson) return;
+    const draft = editingLesson;
+    runWithOverlapCheck(draft, () => {
+      updateLesson(draft.id, {
+        title: draft.title,
+        date: draft.date,
+        startTime: draft.startTime,
+        endTime: draft.endTime,
+        modality: draft.modality,
+        roomId: draft.modality === "dad" ? undefined : draft.roomId,
+        notes: draft.notes,
+        dadLink:
+          draft.modality !== "aula"
+            ? draft.dadLink || `https://meet.aulanova.it/${draft.courseId}`
+            : undefined,
+      });
+      setEditingLesson(null);
+      setSelectedDate(draft.date);
+    });
+  };
+
+  const onImportFile = async (file: File) => {
+    setImportError(null);
+    try {
+      const text = await readSpreadsheetFile(file);
+      const preview = parseCalendarSpreadsheet(text);
+      setImportPreview(preview);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Errore lettura file");
+    }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-teal-deep">
-            Pianificazione scuola
+            Generatore agile
           </p>
           <h1 className="mt-2 font-display text-3xl font-bold text-ink md:text-4xl">
             Calendario corsi
           </h1>
-          <p className="mt-2 max-w-2xl text-ink-soft">
-            Definisci docenti, aule, ore, corsi, iscrizioni e modalità aula / DAD / ibrida.
+          <p className="mt-2 max-w-2xl text-sm text-ink-soft md:text-base">
+            Anagrafiche scuola/docenti, caratteristiche corso, date preferite/occupate,
+            vista mensile, modifica al volo e import CSV/Excel.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={resetDemo}
-          className="btn-ghost !py-2.5 text-sm"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Reset demo
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="btn-primary !py-2.5 text-sm"
+          >
+            <Plus className="h-4 w-4" />
+            Inserisci corso
+          </button>
+          <button type="button" onClick={resetDemo} className="btn-ghost !py-2.5 text-sm">
+            <RefreshCw className="h-4 w-4" />
+            Reset demo
+          </button>
+        </div>
       </div>
 
       <SimulationLinksBanner />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      {overlaps.length > 0 && (
+        <div className="rounded-[1.3rem] border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-bold">
+                {overlaps.length} accavallamento/i docente rilevato/i
+              </p>
+              <p className="mt-1 text-xs text-amber-800/90">
+                I giorni in conflitto sono evidenziati in rosso sul calendario.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {overlaps.map((o) => (
+                  <button
+                    key={`${o.teacherId}-${o.date}`}
+                    type="button"
+                    onClick={() => goToOverlapDay(o.date, o.teacherId)}
+                    className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-900 shadow-sm transition hover:border-red-400 hover:bg-red-50 hover:text-red-800"
+                  >
+                    {o.teacherName.split(" ")[0]} · {o.date} · {o.lessons.length} lezioni
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="grid gap-3 grid-cols-2 xl:grid-cols-6">
         {[
+          { label: "Scuole", value: stats.schools, icon: Building2 },
           { label: "Docenti", value: stats.teachers, icon: GraduationCap },
           { label: "Aule", value: stats.rooms, icon: Building2 },
           { label: "Corsi", value: stats.courses, icon: CalendarDays },
           { label: "Lezioni", value: stats.lessons, icon: Clock3 },
           { label: "Studenti", value: stats.students, icon: Users },
-          { label: "Ore totali", value: stats.totalHours, icon: Video },
         ].map((item) => {
           const Icon = item.icon;
           return (
             <div key={item.label} className="glass rounded-2xl p-4">
               <div className="flex items-center gap-2 text-ink-soft">
                 <Icon className="h-4 w-4" />
-                <span className="text-xs font-semibold uppercase tracking-[0.1em]">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.1em]">
                   {item.label}
                 </span>
               </div>
@@ -136,9 +267,10 @@ export default function AdminCalendarClient() {
       <div className="flex flex-wrap gap-2">
         {(
           [
-            ["calendario", "Vista settimanale"],
-            ["nuovo-corso", "Crea corso + lezioni"],
-            ["risorse", "Docenti & aule"],
+            ["calendario", "Mensile"],
+            ["corsi", "Corsi"],
+            ["anagrafiche", "Anagrafiche"],
+            ["import", "Importa"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -157,209 +289,275 @@ export default function AdminCalendarClient() {
       </div>
 
       {tab === "calendario" && (
-        <div className="glass rounded-[1.6rem] p-5 md:p-7">
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="font-display text-xl font-bold text-ink">Settimana corrente</h2>
-            <div className="flex flex-wrap gap-2">
-              {state.courses.map((course) => (
-                <span
-                  key={course.id}
-                  className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-ink"
-                >
-                  <span
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ background: course.color }}
-                  />
-                  {course.title}
-                  <span className="text-ink-soft">
-                    ({scheduledHoursForCourse(state.lessons, course.id)}/
-                    {course.totalHours}h)
-                  </span>
-                </span>
-              ))}
-            </div>
-          </div>
-          <WeekCalendarGrid
-            lessons={state.lessons}
-            onLessonClick={setSelectedLesson}
-          />
-        </div>
-      )}
-
-      {tab === "nuovo-corso" && (
-        <form
-          onSubmit={handleCreateCourse}
-          className="glass-strong grid gap-6 rounded-[1.6rem] p-6 md:grid-cols-2 md:p-8"
-        >
-          <div className="space-y-4">
-            <h2 className="font-display text-xl font-bold text-ink">Nuovo corso</h2>
-
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.12em] text-ink-soft">
-                Titolo corso
-              </span>
-              <input
-                required
-                value={courseForm.title}
-                onChange={(e) => setCourseForm((f) => ({ ...f, title: e.target.value }))}
-                placeholder="Es. HACCP Avanzato"
-                className="w-full rounded-2xl border border-line bg-white/85 px-4 py-3 text-sm outline-none ring-teal/30 focus:ring-2"
-              />
-            </label>
-
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.12em] text-ink-soft">
-                  Ore totali
-                </span>
-                <input
-                  type="number"
-                  min={4}
-                  max={200}
-                  value={courseForm.totalHours}
-                  onChange={(e) =>
-                    setCourseForm((f) => ({ ...f, totalHours: Number(e.target.value) }))
-                  }
-                  className="w-full rounded-2xl border border-line bg-white/85 px-4 py-3 text-sm outline-none ring-teal/30 focus:ring-2"
-                />
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="text-xs font-bold uppercase tracking-[0.12em] text-ink-soft">
+                Evidenzia docente
               </label>
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.12em] text-ink-soft">
-                  N. lezioni
-                </span>
-                <input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={courseForm.sessionsCount}
-                  onChange={(e) =>
-                    setCourseForm((f) => ({ ...f, sessionsCount: Number(e.target.value) }))
-                  }
-                  className="w-full rounded-2xl border border-line bg-white/85 px-4 py-3 text-sm outline-none ring-teal/30 focus:ring-2"
-                />
-              </label>
-            </div>
-
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.12em] text-ink-soft">
-                Docente
-              </span>
               <select
-                value={courseForm.teacherId}
-                onChange={(e) => setCourseForm((f) => ({ ...f, teacherId: e.target.value }))}
-                className="w-full rounded-2xl border border-line bg-white/85 px-4 py-3 text-sm outline-none ring-teal/30 focus:ring-2"
+                value={highlightTeacherId}
+                onChange={(e) => setHighlightTeacherId(e.target.value)}
+                className="rounded-full border border-line bg-white/80 px-3 py-2 text-sm"
               >
+                <option value="">Nessuno</option>
                 {state.teachers.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.name} · {t.specialty}
+                    {t.name}
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
+          </div>
 
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.12em] text-ink-soft">
-                Modalità
+          <MonthCalendar
+            year={year}
+            month={month}
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+            onChangeMonth={(y, m) => {
+              setYear(y);
+              setMonth(m);
+            }}
+            highlightTeacherId={highlightTeacherId || undefined}
+            markOverlapDates={overlapDates}
+          />
+
+          <div className="glass rounded-[1.5rem] p-5">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-display text-xl font-bold text-ink">
+                Lezioni del {selectedDate ?? "—"}
+              </h2>
+              <span className="text-xs font-semibold text-ink-soft">
+                {dayLessons.length} lezione/i
               </span>
-              <div className="grid grid-cols-3 gap-2">
-                {(["aula", "dad", "ibrida"] as Modality[]).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setCourseForm((f) => ({ ...f, modality: m }))}
-                    className={`rounded-2xl border px-3 py-3 text-xs font-bold transition ${
-                      courseForm.modality === m
-                        ? "border-teal bg-teal/10 text-teal-deep"
-                        : "border-line bg-white/70 text-ink-soft"
-                    }`}
-                  >
-                    {m === "aula" ? "In aula" : m === "dad" ? "DAD" : "Ibrida"}
-                  </button>
-                ))}
-              </div>
-            </label>
+            </div>
 
-            {courseForm.modality !== "dad" && (
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.12em] text-ink-soft">
-                  Aula
-                </span>
-                <select
-                  value={courseForm.roomId}
-                  onChange={(e) => setCourseForm((f) => ({ ...f, roomId: e.target.value }))}
-                  className="w-full rounded-2xl border border-line bg-white/85 px-4 py-3 text-sm outline-none ring-teal/30 focus:ring-2"
-                >
-                  {state.rooms.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name} · {r.capacity} posti
-                    </option>
-                  ))}
-                </select>
-              </label>
+            {dayLessons.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-line px-4 py-8 text-center text-sm text-ink-soft">
+                Nessuna lezione in questo giorno. Crea un corso o importa un foglio.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {dayLessons.map((lesson) => {
+                  const course = getCourse(lesson.courseId);
+                  const room = lesson.roomId ? getRoom(lesson.roomId) : undefined;
+                  const teacher = getTeacher(lesson.teacherId);
+                  const morning = isMorningLesson(lesson.startTime);
+                  return (
+                    <li
+                      key={lesson.id}
+                      className={`rounded-2xl border-y border-r border-line/70 p-4 ${
+                        morning ? "bg-emerald-50/80" : "bg-yellow-50/80"
+                      }`}
+                      style={{
+                        borderLeftWidth: 4,
+                        borderLeftColor: course?.color ?? "#0f8f8a",
+                        borderLeftStyle: "solid",
+                      }}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-xs font-bold text-ink-soft">
+                              {lesson.startTime} – {lesson.endTime}
+                            </p>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                                morning
+                                  ? "bg-emerald-200/80 text-emerald-900"
+                                  : "bg-yellow-200/90 text-yellow-900"
+                              }`}
+                            >
+                              {morning ? "Mattina" : "Pomeriggio"}
+                            </span>
+                          </div>
+                          <p className="mt-1 font-display text-lg font-bold text-ink">
+                            {lesson.title}
+                          </p>
+                          <p className="text-sm text-ink-soft">{course?.title}</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <ModalityBadge modality={lesson.modality} />
+                            {teacher && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-transparent px-1 py-0.5 text-xs font-bold text-teal-deep">
+                                <GraduationCap className="h-3 w-3" />
+                                {teacher.name} · {lesson.startTime}–{lesson.endTime}
+                              </span>
+                            )}
+                            {room && (
+                              <span className="text-xs font-semibold text-ink-soft">
+                                {room.name}
+                              </span>
+                            )}
+                          </div>
+                          {lesson.notes && (
+                            <p className="mt-2 text-xs text-ink-soft">Note: {lesson.notes}</p>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            className="btn-ghost !px-3 !py-2 text-xs"
+                            onClick={() => setEditingLesson(lesson)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Modifica
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-full bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600"
+                            onClick={() => setDeleteId(lesson.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 inline mr-1" />
+                            Elimina
+                          </button>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </div>
-
-          <div className="space-y-4">
-            <h3 className="font-display text-lg font-bold text-ink">Iscrivi studenti</h3>
-            <div className="max-h-64 space-y-2 overflow-y-auto rounded-2xl border border-line/70 bg-white/60 p-3">
-              {state.students.map((student) => {
-                const checked = courseForm.studentIds.includes(student.id);
-                return (
-                  <label
-                    key={student.id}
-                    className={`flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 transition ${
-                      checked ? "bg-teal/10" : "hover:bg-white/80"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleStudent(student.id)}
-                      className="h-4 w-4 accent-teal"
-                    />
-                    <span>
-                      <span className="block text-sm font-semibold text-ink">{student.name}</span>
-                      <span className="text-xs text-ink-soft">{student.email}</span>
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-
-            <div className="rounded-2xl border border-dashed border-teal/25 bg-teal/5 p-4 text-sm text-ink-soft">
-              <p className="font-semibold text-ink">Cosa succede al salvataggio</p>
-              <ul className="mt-2 list-inside list-disc space-y-1 text-xs">
-                <li>Viene creato il corso con colore e date settimana corrente</li>
-                <li>Le lezioni si distribuiscono automaticamente lun–ven</li>
-                <li>Docente e studenti vedono subito il calendario aggiornato</li>
-              </ul>
-            </div>
-
-            <button type="submit" className="btn-primary w-full">
-              <Plus className="h-4 w-4" />
-              Crea corso e genera calendario
-            </button>
-          </div>
-        </form>
+        </div>
       )}
 
-      {tab === "risorse" && (
+      {tab === "corsi" && (
+        <div className="space-y-5">
+          <div className="glass-strong flex flex-wrap items-center justify-between gap-4 rounded-[1.6rem] p-6">
+            <div>
+              <h2 className="font-display text-xl font-bold text-ink">Nuovo corso</h2>
+              <p className="mt-1 text-sm text-ink-soft">
+                Crea un corso scegliendo date manuali sul calendario e ore personalizzate per ogni lezione.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className="btn-primary"
+            >
+              <Plus className="h-4 w-4" />
+              Inserisci corso
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            <h2 className="font-display text-xl font-bold text-ink">Lista corsi</h2>
+            {state.courses.map((course) => {
+              const teacherNames = courseTeacherIds(course)
+                .map((id) => getTeacher(id)?.name)
+                .filter(Boolean)
+                .join(", ");
+              const school = getSchool(course.schoolId);
+              const scheduled = scheduledHoursForCourse(state.lessons, course.id);
+              const courseLessons = state.lessons.filter((l) => l.courseId === course.id);
+              return (
+                <article key={course.id} className="glass rounded-[1.4rem] p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-display text-lg font-bold text-ink">{course.title}</h3>
+                        <ModalityBadge modality={course.modality} compact />
+                        <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold uppercase text-ink-soft">
+                          {STATUS_LABELS[course.status]}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm text-ink-soft">{course.description}</p>
+                      <p className="mt-2 text-xs text-ink-soft">
+                        {course.totalHours}h · {course.daysCount} giorni · {teacherNames || "—"} ·{" "}
+                        {school?.name}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-teal-deep">
+                        {scheduled}/{course.totalHours}h in calendario · {courseLessons.length}{" "}
+                        lezioni
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {courseLessons[0] && (
+                        <button
+                          type="button"
+                          className="btn-ghost !py-2 !px-3 text-xs"
+                          onClick={() => {
+                            setSelectedDate(courseLessons[0].date);
+                            setEditingLesson(courseLessons[0]);
+                            setTab("calendario");
+                          }}
+                        >
+                          <Pencil className="h-3.5 w-3.5" /> Modifica lezione
+                        </button>
+                      )}
+                      {course.status !== "concluso" && (
+                        <button
+                          type="button"
+                          className="rounded-full bg-teal/10 px-3 py-2 text-xs font-bold text-teal-deep"
+                          onClick={() => concludeCourse(course.id)}
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5 inline mr-1" />
+                          Passa a docente
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                        onClick={() => setDeleteCourseId(course.id)}
+                      >
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        Elimina corso
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {tab === "anagrafiche" && (
         <div className="grid gap-5 lg:grid-cols-2">
           <div className="glass rounded-[1.5rem] p-6">
+            <h2 className="font-display text-xl font-bold text-ink">Scuola</h2>
+            {state.schools.map((school) => (
+              <form
+                key={school.id}
+                className="mt-4 space-y-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  updateSchool(school.id, schoolForm.name ? schoolForm : school);
+                }}
+              >
+                <input
+                  defaultValue={school.name}
+                  onChange={(e) => setSchoolForm((f) => ({ ...f, name: e.target.value }))}
+                  className="w-full rounded-xl border border-line bg-white/80 px-3 py-2 text-sm"
+                  placeholder="Nome scuola"
+                />
+                <input
+                  defaultValue={school.address}
+                  onChange={(e) => setSchoolForm((f) => ({ ...f, address: e.target.value }))}
+                  className="w-full rounded-xl border border-line bg-white/80 px-3 py-2 text-sm"
+                  placeholder="Indirizzo"
+                />
+                <input
+                  defaultValue={school.city}
+                  onChange={(e) => setSchoolForm((f) => ({ ...f, city: e.target.value }))}
+                  className="w-full rounded-xl border border-line bg-white/80 px-3 py-2 text-sm"
+                  placeholder="Città"
+                />
+                <button type="submit" className="btn-ghost text-sm">
+                  Salva scuola
+                </button>
+              </form>
+            ))}
+          </div>
+
+          <div className="glass rounded-[1.5rem] p-6">
             <h2 className="font-display text-xl font-bold text-ink">Docenti</h2>
-            <ul className="mt-4 space-y-2">
+            <ul className="mt-3 space-y-3">
               {state.teachers.map((t) => (
-                <li
-                  key={t.id}
-                  className="flex items-center justify-between rounded-xl bg-white/70 px-4 py-3"
-                >
-                  <div>
-                    <p className="font-semibold text-ink">{t.name}</p>
-                    <p className="text-xs text-ink-soft">{t.specialty}</p>
-                  </div>
-                  <span className="text-[10px] font-bold uppercase text-teal-deep">
-                    {state.lessons.filter((l) => l.teacherId === t.id).length} lez.
-                  </span>
+                <li key={t.id} className="rounded-xl bg-white/70 p-3">
+                  <p className="font-semibold text-ink">{t.name}</p>
+                  <p className="text-xs text-ink-soft">{t.specialty}</p>
                 </li>
               ))}
             </ul>
@@ -368,8 +566,16 @@ export default function AdminCalendarClient() {
               onSubmit={(e) => {
                 e.preventDefault();
                 if (!newTeacher.name) return;
-                addTeacher(newTeacher.name, newTeacher.email, newTeacher.specialty);
-                setNewTeacher({ name: "", email: "", specialty: "" });
+                addTeacher({
+                  name: newTeacher.name,
+                  email: newTeacher.email || `${newTeacher.name}@centro.it`,
+                  specialty: newTeacher.specialty || "Generale",
+                });
+                setNewTeacher({
+                  name: "",
+                  email: "",
+                  specialty: "",
+                });
               }}
             >
               <input
@@ -385,7 +591,7 @@ export default function AdminCalendarClient() {
                 className="rounded-xl border border-line bg-white/80 px-3 py-2 text-sm"
               />
               <input
-                placeholder="Specializzazione"
+                placeholder="Specialità"
                 value={newTeacher.specialty}
                 onChange={(e) => setNewTeacher((f) => ({ ...f, specialty: e.target.value }))}
                 className="rounded-xl border border-line bg-white/80 px-3 py-2 text-sm"
@@ -394,28 +600,17 @@ export default function AdminCalendarClient() {
                 <Plus className="h-4 w-4" /> Aggiungi docente
               </button>
             </form>
-          </div>
 
-          <div className="glass rounded-[1.5rem] p-6">
-            <h2 className="font-display text-xl font-bold text-ink">Aule</h2>
-            <ul className="mt-4 space-y-2">
+            <h3 className="mt-6 font-display text-lg font-bold text-ink">Aule</h3>
+            <ul className="mt-2 space-y-2">
               {state.rooms.map((r) => (
-                <li
-                  key={r.id}
-                  className="flex items-center justify-between rounded-xl bg-white/70 px-4 py-3"
-                >
-                  <div>
-                    <p className="font-semibold text-ink">{r.name}</p>
-                    <p className="text-xs text-ink-soft">{r.capacity} posti</p>
-                  </div>
-                  <span className="text-[10px] font-bold uppercase text-azure">
-                    {state.lessons.filter((l) => l.roomId === r.id).length} lez.
-                  </span>
+                <li key={r.id} className="rounded-xl bg-white/70 px-3 py-2 text-sm">
+                  {r.name} · {r.capacity} posti
                 </li>
               ))}
             </ul>
             <form
-              className="mt-4 grid gap-2 border-t border-line/60 pt-4"
+              className="mt-3 grid gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
                 if (!newRoom.name) return;
@@ -431,8 +626,6 @@ export default function AdminCalendarClient() {
               />
               <input
                 type="number"
-                min={4}
-                placeholder="Capienza"
                 value={newRoom.capacity}
                 onChange={(e) => setNewRoom((f) => ({ ...f, capacity: Number(e.target.value) }))}
                 className="rounded-xl border border-line bg-white/80 px-3 py-2 text-sm"
@@ -445,77 +638,247 @@ export default function AdminCalendarClient() {
         </div>
       )}
 
-      {selectedLesson && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-ink/25 p-4 backdrop-blur-sm md:items-center"
-          onClick={() => setSelectedLesson(null)}
-        >
-          <div
-            className="glass-strong w-full max-w-md rounded-[1.6rem] p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {(() => {
-              const course = getCourse(selectedLesson.courseId);
-              const room = selectedLesson.roomId
-                ? getRoom(selectedLesson.roomId)
-                : undefined;
-              const teacher = getTeacher(selectedLesson.teacherId);
-              return (
-                <>
-                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-teal-deep">
-                    Dettaglio lezione
-                  </p>
-                  <h3 className="mt-2 font-display text-2xl font-bold text-ink">
-                    {selectedLesson.title}
-                  </h3>
-                  <p className="mt-1 text-sm text-ink-soft">{course?.title}</p>
-                  <div className="mt-4 space-y-2 text-sm">
-                    <p>
-                      <strong>Quando:</strong> {selectedLesson.date} ·{" "}
-                      {selectedLesson.startTime}–{selectedLesson.endTime}
-                    </p>
-                    <p className="flex items-center gap-2">
-                      <strong>Modalità:</strong>{" "}
-                      <ModalityBadge modality={selectedLesson.modality} />
-                    </p>
-                    {teacher && (
-                      <p>
-                        <strong>Docente:</strong> {teacher.name}
-                      </p>
-                    )}
-                    {room && (
-                      <p>
-                        <strong>Aula:</strong> {room.name}
-                      </p>
-                    )}
-                    {selectedLesson.dadLink && (
-                      <p>
-                        <strong>Link DAD:</strong>{" "}
-                        <a
-                          href={selectedLesson.dadLink}
-                          className="text-teal-deep underline"
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Apri sessione
-                        </a>
-                      </p>
-                    )}
-                  </div>
-                  <div className="mt-6 flex gap-2">
-                    <Link href="/docente" className="btn-ghost flex-1 text-sm">
-                      Vista docente
-                    </Link>
-                    <Link href="/studente" className="btn-primary flex-1 text-sm">
-                      Vista studente
-                    </Link>
-                  </div>
-                </>
-              );
-            })()}
+      {tab === "import" && (
+        <div className="glass-strong rounded-[1.6rem] p-6">
+          <div className="flex items-start gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-teal/10 text-teal-deep">
+              <FileSpreadsheet className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="font-display text-xl font-bold text-ink">
+                Importa CSV / Excel
+              </h2>
+              <p className="mt-1 text-sm text-ink-soft">
+                Carica un foglio con colonne come: scuola, docente, corso, descrizione, ore,
+                giorni, modalita, aula, studente, lezione, data, inizio, fine, date_preferite,
+                date_occupate. Anteprima obbligatoria prima di aggiornare.
+              </p>
+            </div>
           </div>
+
+          <label className="mt-5 flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-teal/30 bg-teal/5 px-4 py-10 text-center">
+            <FileSpreadsheet className="h-8 w-8 text-teal-deep" />
+            <span className="mt-3 text-sm font-bold text-ink">Scegli file .csv .xlsx .txt</span>
+            <input
+              type="file"
+              accept=".csv,.xlsx,.xls,.txt,.tsv"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void onImportFile(file);
+              }}
+            />
+          </label>
+
+          {importError && (
+            <p className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {importError}
+            </p>
+          )}
+
+          {importPreview && (
+            <div className="mt-5 space-y-3 rounded-2xl border border-line bg-white/80 p-4">
+              <h3 className="font-display text-lg font-bold text-ink">Anteprima import</h3>
+              <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-3">
+                <p>Scuole: {importPreview.schools.length}</p>
+                <p>Docenti: {importPreview.teachers.length}</p>
+                <p>Aule: {importPreview.rooms.length}</p>
+                <p>Corsi: {importPreview.courses.length}</p>
+                <p>Lezioni: {importPreview.lessons.length}</p>
+                <p>Studenti: {importPreview.students.length}</p>
+              </div>
+              {importPreview.warnings.length > 0 && (
+                <ul className="text-xs text-amber-700">
+                  {importPreview.warnings.map((w) => (
+                    <li key={w}>⚠ {w}</li>
+                  ))}
+                </ul>
+              )}
+              <div className="max-h-48 overflow-y-auto text-xs text-ink-soft">
+                {importPreview.courses.slice(0, 8).map((c) => (
+                  <p key={c.id}>
+                    Corso: {c.title} · {c.totalHours}h · {c.modality}
+                  </p>
+                ))}
+                {importPreview.lessons.slice(0, 8).map((l) => (
+                  <p key={l.id}>
+                    Lezione: {l.title} · {l.date} {l.startTime}-{l.endTime}
+                  </p>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="btn-ghost flex-1"
+                  onClick={() => setImportPreview(null)}
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary flex-1"
+                  onClick={() => {
+                    applyImport(importPreview);
+                    setImportPreview(null);
+                    setTab("calendario");
+                  }}
+                >
+                  Conferma aggiornamento
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
+
+      {/* Edit lesson modal */}
+      {editingLesson && (
+        <div
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-ink/30 p-4 backdrop-blur-sm md:items-center"
+          onClick={() => setEditingLesson(null)}
+        >
+          <form
+            onSubmit={handleSaveLesson}
+            className="glass-strong w-full max-w-md space-y-3 rounded-[1.6rem] p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-display text-xl font-bold text-ink">Modifica lezione</h3>
+            <input
+              value={editingLesson.title}
+              onChange={(e) =>
+                setEditingLesson({ ...editingLesson, title: e.target.value })
+              }
+              className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm"
+            />
+            <input
+              type="date"
+              value={editingLesson.date}
+              onChange={(e) =>
+                setEditingLesson({ ...editingLesson, date: e.target.value })
+              }
+              className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="time"
+                value={editingLesson.startTime}
+                onChange={(e) =>
+                  setEditingLesson({ ...editingLesson, startTime: e.target.value })
+                }
+                className="rounded-xl border border-line bg-white px-3 py-2 text-sm"
+              />
+              <input
+                type="time"
+                value={editingLesson.endTime}
+                onChange={(e) =>
+                  setEditingLesson({ ...editingLesson, endTime: e.target.value })
+                }
+                className="rounded-xl border border-line bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {(["aula", "dad", "ibrida"] as Modality[]).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setEditingLesson({ ...editingLesson, modality: m })}
+                  className={`rounded-xl border px-2 py-2 text-xs font-bold ${
+                    editingLesson.modality === m
+                      ? "border-teal bg-teal/10 text-teal-deep"
+                      : "border-line"
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+            {editingLesson.modality !== "dad" && (
+              <select
+                value={editingLesson.roomId ?? ""}
+                onChange={(e) =>
+                  setEditingLesson({ ...editingLesson, roomId: e.target.value })
+                }
+                className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm"
+              >
+                {state.rooms.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <textarea
+              placeholder="Note / avviso"
+              value={editingLesson.notes ?? ""}
+              onChange={(e) =>
+                setEditingLesson({ ...editingLesson, notes: e.target.value })
+              }
+              className="min-h-[70px] w-full rounded-xl border border-line bg-white px-3 py-2 text-sm"
+            />
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                className="btn-ghost flex-1"
+                onClick={() => setEditingLesson(null)}
+              >
+                Annulla
+              </button>
+              <button type="submit" className="btn-primary flex-1">
+                Salva
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <CourseCreateModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={() => setTab("calendario")}
+      />
+
+      <ConfirmModal
+        open={Boolean(deleteId)}
+        danger
+        title="Eliminare la lezione?"
+        message="L'operazione aggiorna subito i calendari di docenti e studenti. Non può essere annullata."
+        confirmLabel="Elimina"
+        onCancel={() => setDeleteId(null)}
+        onConfirm={() => {
+          if (deleteId) deleteLesson(deleteId);
+          setDeleteId(null);
+        }}
+      />
+
+      <ConfirmModal
+        open={Boolean(deleteCourseId)}
+        danger
+        title="Eliminare l'intero corso?"
+        message={
+          deleteCourseId
+            ? `Stai per eliminare definitivamente «${getCourse(deleteCourseId)?.title ?? "questo corso"}» e tutte le sue lezioni dal calendario. Operazione di emergenza, non annullabile.`
+            : "Stai per eliminare definitivamente il corso e tutte le sue lezioni. Operazione non annullabile."
+        }
+        confirmLabel="Elimina corso"
+        cancelLabel="Annulla"
+        onCancel={() => setDeleteCourseId(null)}
+        onConfirm={() => {
+          if (deleteCourseId) {
+            deleteCourse(deleteCourseId);
+            if (editingLesson?.courseId === deleteCourseId) setEditingLesson(null);
+          }
+          setDeleteCourseId(null);
+        }}
+      />
+
+      <OverlapWarningModal
+        open={Boolean(overlapModal)}
+        teacherName={overlapModal?.teacherName ?? ""}
+        date={overlapModal?.date ?? ""}
+        details={overlapModal?.details ?? []}
+        onCancel={() => setOverlapModal(null)}
+        onProceed={() => overlapModal?.proceed()}
+      />
     </div>
   );
 }

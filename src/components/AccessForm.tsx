@@ -1,19 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { BrandMark } from "./BrandMark";
 import { Eye, EyeOff, Lock, Mail } from "lucide-react";
+import { useCalendar } from "@/lib/calendar/CalendarProvider";
 
 const copy = {
   admin: {
     title: "Accesso Amministrazione",
-    subtitle: "Configura scuola, corsi, calendario e anagrafe.",
+    subtitle: "Configura scuola, docenti, corsi e calendario.",
     demo: "/admin",
   },
   docente: {
     title: "Accesso Docente",
-    subtitle: "Materiali, lezioni, DAD e valutazioni.",
+    subtitle: "Entra con l'email del profilo creato dall'admin.",
     demo: "/docente",
   },
   studente: {
@@ -25,18 +26,56 @@ const copy = {
 
 export function AccessForm({ role }: { role: keyof typeof copy }) {
   const [show, setShow] = useState(false);
+  const [email, setEmail] = useState(
+    role === "admin"
+      ? "admin@aula.nova"
+      : role === "docente"
+        ? "marco.bianchi@centro.it"
+        : "laura.verdi@email.it"
+  );
+  const [error, setError] = useState("");
+  const { state, loginAsTeacherEmail, setCurrentStudentId } = useCalendar();
   const meta = copy[role];
+
+  const teacherHint = useMemo(
+    () =>
+      role === "docente"
+        ? state.teachers.map((t) => t.email).slice(0, 3).join(" · ")
+        : "",
+    [role, state.teachers]
+  );
 
   return (
     <div className="glass-strong w-full max-w-md rounded-[1.8rem] p-7 md:p-8">
       <BrandMark compact={false} href="/" />
       <h1 className="mt-8 font-display text-3xl font-bold text-ink">{meta.title}</h1>
       <p className="mt-2 text-sm text-ink-soft">{meta.subtitle}</p>
+      {role === "docente" && teacherHint && (
+        <p className="mt-2 text-[11px] text-ink-soft">
+          Demo: {teacherHint}
+        </p>
+      )}
 
       <form
         className="mt-8 space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
+          setError("");
+          if (role === "docente") {
+            const teacher = loginAsTeacherEmail(email);
+            if (!teacher) {
+              setError("Nessun docente con questa email. Crealo prima in Admin → Docenti.");
+              return;
+            }
+            window.location.href = meta.demo;
+            return;
+          }
+          if (role === "studente") {
+            const student = state.students.find(
+              (s) => s.email.toLowerCase() === email.trim().toLowerCase()
+            );
+            if (student) setCurrentStudentId(student.id);
+          }
           window.location.href = meta.demo;
         }}
       >
@@ -49,15 +88,10 @@ export function AccessForm({ role }: { role: keyof typeof copy }) {
             <input
               required
               type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               placeholder="nome@centro.it"
               className="w-full rounded-2xl border border-line bg-white/80 py-3.5 pl-11 pr-4 text-sm outline-none ring-teal/30 transition focus:ring-2"
-              defaultValue={
-                role === "admin"
-                  ? "admin@aula.nova"
-                  : role === "docente"
-                    ? "docente@aula.nova"
-                    : "studente@aula.nova"
-              }
             />
           </span>
         </label>
@@ -84,16 +118,45 @@ export function AccessForm({ role }: { role: keyof typeof copy }) {
             </button>
           </span>
         </label>
+        {error && (
+          <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</p>
+        )}
         <button type="submit" className="btn-primary mt-2 w-full">
           Entra in {role === "admin" ? "Admin" : role === "docente" ? "Docente" : "Studente"}
         </button>
       </form>
 
       <p className="mt-5 text-center text-xs text-ink-soft">
-        Demo aperta —{" "}
-        <Link href={meta.demo} className="font-semibold text-teal-deep underline-offset-2 hover:underline">
-          entra senza login
-        </Link>
+        {role === "docente" ? (
+          <>
+            Oppure scegli un docente:{" "}
+            {state.teachers.slice(0, 3).map((t, i) => (
+              <span key={t.id}>
+                {i > 0 && " · "}
+                <button
+                  type="button"
+                  className="font-semibold text-teal-deep underline-offset-2 hover:underline"
+                  onClick={() => {
+                    loginAsTeacherEmail(t.email);
+                    window.location.href = meta.demo;
+                  }}
+                >
+                  {t.name.split(" ")[0]}
+                </button>
+              </span>
+            ))}
+          </>
+        ) : (
+          <>
+            Demo aperta —{" "}
+            <Link
+              href={meta.demo}
+              className="font-semibold text-teal-deep underline-offset-2 hover:underline"
+            >
+              entra senza login
+            </Link>
+          </>
+        )}
       </p>
     </div>
   );

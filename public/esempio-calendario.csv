@@ -1,0 +1,4 @@
+tipo;scuola;citta;docente;email_docente;specialita;date_preferite;date_occupate;corso;descrizione;ore;giorni;modalita;aula;capienza;studente;email_studente;lezione;data;inizio;fine
+lezione;Centro Formazione AulaNova Napoli;Napoli;Marco Bianchi;marco.bianchi@centro.it;HACCP;2026-08-03|2026-08-04;2026-08-05;HACCP Import Demo;Corso igiene alimentare da foglio;12;3;ibrida;Aula Lab;16;Laura Verdi;laura.verdi@email.it;Modulo Import 1;03/08/2026;09:30;12:30
+lezione;Centro Formazione AulaNova Napoli;Napoli;Marco Bianchi;marco.bianchi@centro.it;HACCP;2026-08-03|2026-08-04;2026-08-05;HACCP Import Demo;Corso igiene alimentare da foglio;12;3;dad;;;Laura Verdi;laura.verdi@email.it;Modulo Import 2;04/08/2026;14:00;17:00
+lezione;Centro Formazione AulaNova Napoli;Napoli;Elena Rossi;elena.rossi@centro.it;Sicurezza;2026-08-05;;Sicurezza Import;Formazione 81/08;8;1;dad;;;Matteo Greco;matteo.greco@email.it;Lezione DPI;05/08/2026;09:00;13:00

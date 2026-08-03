@@ -1,26 +1,18 @@
 "use client";
 
 import { AppShell } from "@/components/AppShell";
-import {
-  BookOpen,
-  CalendarDays,
-  ClipboardCheck,
-  LayoutDashboard,
-  MessageSquare,
-  Upload,
-  Video,
-} from "lucide-react";
+import { BookOpen, CalendarDays, LayoutDashboard } from "lucide-react";
 
 const nav = [
   { href: "/docente", label: "Home", icon: LayoutDashboard },
   { href: "/docente/calendario", label: "Calendario", icon: CalendarDays },
   { href: "/docente/corsi", label: "Corsi", icon: BookOpen },
-  { href: "/docente/materiali", label: "Materiali", icon: Upload },
-  { href: "/docente/dad", label: "DAD", icon: Video },
-  { href: "/docente/valutazioni", label: "Valutazioni", icon: ClipboardCheck },
-  { href: "/docente/messaggi", label: "Admin", icon: MessageSquare },
 ];
 
 export default function DocenteLayout({ children }: { children: React.ReactNode }) {
-  return <AppShell roleLabel="Area Docente" nav={nav}>{children}</AppShell>;
+  return (
+    <AppShell roleLabel="Area Docente" nav={nav} mobileHint="Scorri le lezioni e apri i link DAD dal telefono">
+      {children}
+    </AppShell>
+  );
 }

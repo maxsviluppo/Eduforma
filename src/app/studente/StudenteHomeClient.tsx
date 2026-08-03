@@ -8,7 +8,7 @@ import { formatTimeRange, isToday } from "@/lib/calendar/types";
 
 export default function StudenteHomeClient() {
   const {
-    demoStudentId,
+    currentStudentId,
     getCoursesForStudent,
     getLessonsForStudent,
     getCourse,
@@ -16,10 +16,12 @@ export default function StudenteHomeClient() {
     getRoom,
     getTeacher,
     weekDates,
+    state,
   } = useCalendar();
 
-  const courses = getCoursesForStudent(demoStudentId);
-  const weekLessons = getLessonsForStudent(demoStudentId, weekDates);
+  const student = state.students.find((s) => s.id === currentStudentId);
+  const courses = getCoursesForStudent(currentStudentId);
+  const weekLessons = getLessonsForStudent(currentStudentId, weekDates);
   const todayStr = new Date().toISOString().slice(0, 10);
   const todayLessons = weekLessons.filter((l) => l.date === todayStr);
   const nextLesson =
@@ -32,7 +34,7 @@ export default function StudenteHomeClient() {
     <div className="mx-auto max-w-lg space-y-5 lg:max-w-3xl">
       <div>
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-teal-deep">
-          Ciao, Laura
+          Ciao, {student?.name.split(" ")[0] ?? "Studente"}
         </p>
         <h1 className="mt-2 font-display text-3xl font-bold text-ink">
           Le tue lezioni
@@ -93,7 +95,7 @@ export default function StudenteHomeClient() {
 
       <div className="grid gap-3 sm:grid-cols-2">
         {courses.map((course) => {
-          const progress = getCourseProgress(course.id, demoStudentId);
+          const progress = getCourseProgress(course.id);
           const teacher = getTeacher(course.teacherId);
           const room = course.roomId ? getRoom(course.roomId) : undefined;
           const courseLessons = weekLessons.filter((l) => l.courseId === course.id);

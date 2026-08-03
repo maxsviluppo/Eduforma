@@ -5,14 +5,19 @@ import { ModalityBadge } from "@/components/calendar/ModalityBadge";
 import { scheduledHoursForCourse } from "@/lib/calendar/demo-data";
 
 export default function DocenteCorsiClient() {
-  const { state, demoTeacherId, getRoom } = useCalendar();
-  const myCourses = state.courses.filter((c) => c.teacherId === demoTeacherId);
+  const { state, currentTeacherId, getRoom, getSchool, getTeacher } = useCalendar();
+  const teacher = getTeacher(currentTeacherId);
+  const myCourses = state.courses.filter((c) => c.teacherId === currentTeacherId);
+  const school = teacher?.schoolId ? getSchool(teacher.schoolId) : undefined;
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="font-display text-3xl font-bold text-ink">I tuoi corsi</h1>
-        <p className="mt-2 text-ink-soft">Corsi assegnati dall&apos;amministrazione</p>
+        <p className="mt-2 text-ink-soft">
+          {teacher?.name}
+          {school ? ` · ${school.name}` : ""}
+        </p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         {myCourses.map((course) => {
@@ -54,6 +59,11 @@ export default function DocenteCorsiClient() {
             </article>
           );
         })}
+        {myCourses.length === 0 && (
+          <p className="glass rounded-[1.4rem] p-6 text-sm text-ink-soft md:col-span-2">
+            Nessun corso assegnato a questo docente.
+          </p>
+        )}
       </div>
     </div>
   );
