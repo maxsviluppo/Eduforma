@@ -26,6 +26,8 @@ import type {
   School,
   Student,
   Teacher,
+  TeacherAvailability,
+  TeacherCommitmentBand,
 } from "./types";
 import {
   COURSE_COLORS,
@@ -43,6 +45,7 @@ import {
   type TeacherOverlap,
   POST_IT_COLORS,
 } from "./types";
+import { DEFAULT_TEACHER_AVAILABILITY } from "./teacher-availability";
 
 const STORAGE_KEY = "aulanova-calendar-v4";
 const SESSION_KEY = "aulanova-session-v1";
@@ -150,6 +153,17 @@ type CalendarContextValue = {
   addDayNote: (date: string, text: string) => string;
   updateDayNote: (id: string, text: string) => void;
   deleteDayNote: (id: string) => void;
+  toggleTeacherPreferredDate: (teacherId: string, date: string) => void;
+  toggleTeacherExcludedDate: (teacherId: string, date: string) => void;
+  setTeacherAvailability: (teacherId: string, availability: TeacherAvailability) => void;
+  toggleTeacherCommitment: (
+    teacherId: string,
+    date: string,
+    band: TeacherCommitmentBand
+  ) => void;
+  removeTeacherCommitment: (teacherId: string, commitmentId: string) => void;
+  requestLessonReschedule: (lessonId: string, note?: string) => void;
+  clearLessonReschedule: (lessonId: string) => void;
   hydrated: boolean;
 };
 
@@ -179,10 +193,30 @@ function normalizeState(parsed: CalendarState): CalendarState {
       category: c.category ?? "altro",
       studentCount: c.studentCount ?? c.studentIds?.length ?? 0,
     })),
+    lessons: (parsed.lessons ?? []).map((lesson) => ({ ...lesson })),
     teachers: parsed.teachers.map((teacher) => {
-      const legacy = teacher as Teacher & { preferredDates?: string[]; busyDates?: string[] };
-      const { preferredDates: _p, busyDates: _b, ...rest } = legacy;
-      return rest;
+      const legacy = teacher as Teacher & { busyDates?: string[] };
+      const { busyDates, ...rest } = legacy;
+      const commitments = [...(rest.commitments ?? [])];
+      if (busyDates?.length) {
+        for (const date of busyDates) {
+          if (!commitments.some((c) => c.date === date && c.band === "giornata")) {
+            commitments.push({
+              id: generateId("commit"),
+              teacherId: rest.id,
+              date,
+              band: "giornata",
+            });
+          }
+        }
+      }
+      return {
+        ...rest,
+        preferredDates: rest.preferredDates ?? [],
+        excludedDates: rest.excludedDates ?? [],
+        availability: rest.availability ?? DEFAULT_TEACHER_AVAILABILITY,
+        commitments,
+      };
     }),
   };
 }
@@ -690,6 +724,123 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  const toggleTeacherPreferredDate = useCallback((teacherId: string, date: string) => {
+    setState((prev) => ({
+      ...prev,
+      teachers: prev.teachers.map((t) => {
+        if (t.id !== teacherId) return t;
+        const preferred = t.preferredDates ?? [];
+        const excluded = t.excludedDates ?? [];
+        const has = preferred.includes(date);
+        return {
+          ...t,
+          preferredDates: has
+            ? preferred.filter((d) => d !== date)
+            : [...preferred, date].sort(),
+          excludedDates: excluded.filter((d) => d !== date),
+        };
+      }),
+    }));
+  }, []);
+
+  const toggleTeacherExcludedDate = useCallback((teacherId: string, date: string) => {
+    setState((prev) => ({
+      ...prev,
+      teachers: prev.teachers.map((t) => {
+        if (t.id !== teacherId) return t;
+        const preferred = t.preferredDates ?? [];
+        const excluded = t.excludedDates ?? [];
+        const has = excluded.includes(date);
+        return {
+          ...t,
+          excludedDates: has
+            ? excluded.filter((d) => d !== date)
+            : [...excluded, date].sort(),
+          preferredDates: preferred.filter((d) => d !== date),
+        };
+      }),
+    }));
+  }, []);
+
+  const setTeacherAvailability = useCallback(
+    (teacherId: string, availability: TeacherAvailability) => {
+      setState((prev) => ({
+        ...prev,
+        teachers: prev.teachers.map((t) =>
+          t.id === teacherId ? { ...t, availability } : t
+        ),
+      }));
+    },
+    []
+  );
+
+  const toggleTeacherCommitment = useCallback(
+    (teacherId: string, date: string, band: TeacherCommitmentBand) => {
+      setState((prev) => ({
+        ...prev,
+        teachers: prev.teachers.map((t) => {
+          if (t.id !== teacherId) return t;
+          const commitments = t.commitments ?? [];
+          const existing = commitments.find((c) => c.date === date && c.band === band);
+          if (existing) {
+            return {
+              ...t,
+              commitments: commitments.filter((c) => c.id !== existing.id),
+            };
+          }
+          return {
+            ...t,
+            commitments: [
+              ...commitments,
+              { id: generateId("commit"), teacherId, date, band },
+            ].sort((a, b) => a.date.localeCompare(b.date)),
+          };
+        }),
+      }));
+    },
+    []
+  );
+
+  const removeTeacherCommitment = useCallback((teacherId: string, commitmentId: string) => {
+    setState((prev) => ({
+      ...prev,
+      teachers: prev.teachers.map((t) =>
+        t.id === teacherId
+          ? {
+              ...t,
+              commitments: (t.commitments ?? []).filter((c) => c.id !== commitmentId),
+            }
+          : t
+      ),
+    }));
+  }, []);
+
+  const requestLessonReschedule = useCallback((lessonId: string, note?: string) => {
+    setState((prev) => ({
+      ...prev,
+      lessons: prev.lessons.map((l) =>
+        l.id === lessonId
+          ? {
+              ...l,
+              needsReschedule: true,
+              rescheduleNote: note?.trim() || l.rescheduleNote,
+            }
+          : l
+      ),
+    }));
+  }, []);
+
+  const clearLessonReschedule = useCallback((lessonId: string) => {
+    setState((prev) => ({
+      ...prev,
+      lessons: prev.lessons.map((l) =>
+        l.id === lessonId
+          ? { ...l, needsReschedule: false, rescheduleNote: undefined }
+          : l
+      ),
+    }));
+  }, []);
+
   const value: CalendarContextValue = {
     state,
     weekDates,
@@ -736,6 +887,13 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
     addDayNote,
     updateDayNote,
     deleteDayNote,
+    toggleTeacherPreferredDate,
+    toggleTeacherExcludedDate,
+    setTeacherAvailability,
+    toggleTeacherCommitment,
+    removeTeacherCommitment,
+    requestLessonReschedule,
+    clearLessonReschedule,
     hydrated,
   };
 

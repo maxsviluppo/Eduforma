@@ -11,7 +11,13 @@ import {
   shiftMonth,
   sortLessonsByTime,
   type Lesson,
+  type TeacherCommitment,
 } from "@/lib/calendar/types";
+import {
+  COMMITMENT_BAND_STYLES,
+  commitmentBorderForDate,
+  commitmentsForDate,
+} from "@/lib/calendar/teacher-availability";
 
 export function MonthCalendar({
   year,
@@ -28,6 +34,9 @@ export function MonthCalendar({
   markConfirmedDates,
   markOverlapDates,
   markTeacherBusyDates,
+  markCommitments,
+  markRescheduleDates,
+  problematicLessonIds,
   overlapDatesActionable,
 }: {
   year: number;
@@ -44,6 +53,9 @@ export function MonthCalendar({
   markConfirmedDates?: string[];
   markOverlapDates?: string[];
   markTeacherBusyDates?: string[];
+  markCommitments?: TeacherCommitment[];
+  markRescheduleDates?: string[];
+  problematicLessonIds?: string[];
   overlapDatesActionable?: boolean;
 }) {
   const { state, getCourse, getTeacher } = useCalendar();
@@ -73,8 +85,12 @@ export function MonthCalendar({
       markPreferredDates?.length ||
       markExcludedDates?.length ||
       markPendingDates?.length ||
-      markConfirmedDates?.length
+      markConfirmedDates?.length ||
+      markCommitments?.length ||
+      markRescheduleDates?.length
   );
+
+  const problemSet = new Set(problematicLessonIds ?? []);
 
   return (
     <div className="glass rounded-[1.6rem] p-4 md:p-6">
@@ -128,6 +144,17 @@ export function MonthCalendar({
           const confirmed = markConfirmedDates?.includes(date);
           const overlap = markOverlapDates?.includes(date);
           const teacherBusy = markTeacherBusyDates?.includes(date);
+          const dayCommitments = markCommitments
+            ? commitmentsForDate(markCommitments, date)
+            : [];
+          const hasGiornata = dayCommitments.some((c) => c.band === "giornata");
+          const hasMattina = dayCommitments.some((c) => c.band === "mattina");
+          const hasPomeriggio = dayCommitments.some((c) => c.band === "pomeriggio");
+          const commitmentBorder = commitmentBorderForDate(
+            markCommitments ?? [],
+            date
+          );
+          const reschedule = markRescheduleDates?.includes(date);
           const dayNum = Number(date.slice(8, 10));
           const inMonth = Number(date.slice(5, 7)) === month + 1;
           const highlightedLessons = highlightTeacherId
@@ -138,21 +165,25 @@ export function MonthCalendar({
             ? `border-2 border-red-500 bg-red-50/50 shadow-sm ring-1 ring-red-300/60${
                 overlapDatesActionable ? " cursor-pointer hover:bg-red-50/80" : ""
               }`
-            : excluded
-              ? "border-2 border-rose-400 shadow-sm"
-              : preferred
-                ? "border-2 border-emerald-400 shadow-sm"
-                : pending
-                  ? "border-2 border-dashed border-amber-400 bg-amber-50/40 shadow-sm"
-                  : confirmed
-                    ? "border-2 border-teal-500 shadow-sm"
-                    : highlightedLessons.length > 0
-                      ? "border-2 border-teal-400 shadow-sm ring-1 ring-teal/25"
-                      : selected
-                        ? "border-teal shadow-sm ring-1 ring-teal/30"
-                        : today
-                          ? "border-teal/40"
-                          : "border-transparent hover:border-line";
+            : reschedule
+              ? "border-2 border-amber-500 bg-amber-50/50 shadow-sm ring-1 ring-amber-300/60"
+              : excluded
+                ? "border-2 border-rose-400 shadow-sm"
+                : preferred
+                  ? "border-2 border-emerald-400 shadow-sm"
+                  : pending
+                    ? "border-2 border-dashed border-amber-400 bg-amber-50/40 shadow-sm"
+                    : confirmed
+                      ? "border-2 border-teal-500 shadow-sm"
+                      : commitmentBorder
+                        ? `border-2 shadow-sm ${commitmentBorder}`
+                        : highlightedLessons.length > 0
+                          ? "border-2 border-teal-400 shadow-sm ring-1 ring-teal/25"
+                          : selected
+                            ? "border-teal shadow-sm ring-1 ring-teal/30"
+                            : today
+                              ? "border-teal/40"
+                              : "border-transparent hover:border-line";
 
           return (
             <button
@@ -165,6 +196,21 @@ export function MonthCalendar({
             >
               {teacherBusy && (
                 <span className="pointer-events-none absolute inset-0 z-[1] bg-slate-400/14" />
+              )}
+              {!teacherBusy && hasGiornata && (
+                <span
+                  className={`pointer-events-none absolute inset-0 z-[1] ${COMMITMENT_BAND_STYLES.giornata.overlay}`}
+                />
+              )}
+              {!teacherBusy && !hasGiornata && hasMattina && (
+                <span
+                  className={`pointer-events-none absolute left-0 right-0 z-[1] ${COMMITMENT_BAND_STYLES.mattina.overlayHalf}`}
+                />
+              )}
+              {!teacherBusy && !hasGiornata && hasPomeriggio && (
+                <span
+                  className={`pointer-events-none absolute left-0 right-0 z-[1] ${COMMITMENT_BAND_STYLES.pomeriggio.overlayHalf}`}
+                />
               )}
 
               <span className="relative z-10 flex h-full w-full flex-col gap-1">
@@ -183,6 +229,7 @@ export function MonthCalendar({
                   max={4}
                   size="xs"
                   highlightTeacherId={highlightTeacherId}
+                  problematicLessonIds={problemSet}
                 />
               </span>
             </button>
@@ -201,6 +248,44 @@ export function MonthCalendar({
                 <span className="h-3 w-4 rounded-sm border-2 border-red-500 bg-red-50" />{" "}
                 Accavallamento
               </span>
+            ) : null}
+            {markRescheduleDates?.length ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-3 w-4 rounded-sm border-2 border-amber-500 bg-amber-50" />{" "}
+                Da spostare
+              </span>
+            ) : null}
+            {markPreferredDates?.length ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-3 w-4 rounded-sm border-2 border-emerald-400" /> Preferita
+              </span>
+            ) : null}
+            {markExcludedDates?.length ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-3 w-4 rounded-sm border-2 border-rose-400" /> Esclusa
+              </span>
+            ) : null}
+            {markCommitments?.length ? (
+              <>
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className={`h-3 w-4 rounded-sm ${COMMITMENT_BAND_STYLES.mattina.legendBox}`}
+                  />{" "}
+                  Impegno mattina
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className={`h-3 w-4 rounded-sm ${COMMITMENT_BAND_STYLES.pomeriggio.legendBox}`}
+                  />{" "}
+                  Impegno pomeriggio
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className={`h-3 w-4 rounded-sm ${COMMITMENT_BAND_STYLES.giornata.legendBox}`}
+                  />{" "}
+                  Impegno giornata
+                </span>
+              </>
             ) : null}
             <span className="inline-flex items-center gap-1.5">
               <span className="h-3 w-4 rounded-sm border-2 border-dashed border-amber-400" /> In

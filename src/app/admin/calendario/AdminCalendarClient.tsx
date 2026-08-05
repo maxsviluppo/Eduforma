@@ -124,6 +124,14 @@ export default function AdminCalendarClient() {
     [overlaps]
   );
 
+  const rescheduleRequests = useMemo(
+    () =>
+      state.lessons
+        .filter((l) => l.needsReschedule)
+        .sort((a, b) => a.date.localeCompare(b.date)),
+    [state.lessons]
+  );
+
   const goToOverlapDay = (date: string, teacherId?: string) => {
     setTab("calendario");
     setSelectedDate(date);
@@ -237,6 +245,43 @@ export default function AdminCalendarClient() {
       </div>
 
       <SimulationLinksBanner />
+
+      {rescheduleRequests.length > 0 && (
+        <div className="rounded-[1.3rem] border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-bold">
+                {rescheduleRequests.length} richiesta/e di spostamento da docenti
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {rescheduleRequests.map((lesson) => {
+                  const teacher = getTeacher(lesson.teacherId);
+                  const course = getCourse(lesson.courseId);
+                  return (
+                    <button
+                      key={lesson.id}
+                      type="button"
+                      onClick={() => {
+                        setTab("calendario");
+                        setSelectedDate(lesson.date);
+                        const d = new Date(`${lesson.date}T12:00:00`);
+                        setYear(d.getFullYear());
+                        setMonth(d.getMonth());
+                        setEditingLesson(lesson);
+                        setEditingOriginalTeacherId(lesson.teacherId);
+                      }}
+                      className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-900 shadow-sm transition hover:border-amber-400 hover:bg-amber-100"
+                    >
+                      {teacher?.name.split(" ")[0]} · {lesson.date} · {course?.title ?? lesson.title}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {overlaps.length > 0 && (
         <div className="rounded-[1.3rem] border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
@@ -423,7 +468,7 @@ export default function AdminCalendarClient() {
                               </span>
                             </p>
                           )}
-                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <LessonChip
                               lesson={lesson}
                               getCourse={getCourse}
@@ -431,6 +476,12 @@ export default function AdminCalendarClient() {
                               size="sm"
                               className="inline-flex w-auto"
                             />
+                            {lesson.needsReschedule && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-950">
+                                <AlertTriangle className="h-3 w-3" />
+                                Da spostare
+                              </span>
+                            )}
                             <ModalityBadge modality={lesson.modality} />
                             {school && (
                               <span className="text-xs font-semibold text-ink-soft">
@@ -443,6 +494,11 @@ export default function AdminCalendarClient() {
                               </span>
                             )}
                           </div>
+                          {lesson.rescheduleNote && (
+                            <p className="mt-2 text-xs font-semibold text-amber-900">
+                              Richiesta docente: {lesson.rescheduleNote}
+                            </p>
+                          )}
                           {lesson.notes && (
                             <p className="mt-2 text-xs text-ink-soft">Note: {lesson.notes}</p>
                           )}

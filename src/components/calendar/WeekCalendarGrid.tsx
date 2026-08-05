@@ -8,9 +8,11 @@ import { ModalityBadge } from "./ModalityBadge";
 export function WeekCalendarGrid({
   lessons,
   onLessonClick,
+  renderLessonMeta,
 }: {
   lessons: Lesson[];
   onLessonClick?: (lesson: Lesson) => void;
+  renderLessonMeta?: (lesson: Lesson) => React.ReactNode;
 }) {
   const { weekDates, getCourse, getRoom, getTeacher } = useCalendar();
 
@@ -44,13 +46,18 @@ export function WeekCalendarGrid({
                   const course = getCourse(lesson.courseId);
                   const room = lesson.roomId ? getRoom(lesson.roomId) : undefined;
                   const teacher = getTeacher(lesson.teacherId);
+                  const flagged = lesson.needsReschedule;
 
                   return (
                     <button
                       key={lesson.id}
                       type="button"
                       onClick={() => onLessonClick?.(lesson)}
-                      className="w-full rounded-xl border border-line/70 bg-white/85 p-3 text-left transition hover:-translate-y-0.5 hover:shadow-md"
+                      className={`w-full rounded-xl border bg-white/85 p-3 text-left transition hover:-translate-y-0.5 hover:shadow-md ${
+                        flagged
+                          ? "border-amber-400 bg-amber-50/40 ring-1 ring-amber-300/50"
+                          : "border-line/70"
+                      }`}
                       style={{ borderLeftWidth: 4, borderLeftColor: course?.color ?? "#0f8f8a" }}
                     >
                       <p className="text-[10px] font-bold text-ink-soft">
@@ -71,6 +78,7 @@ export function WeekCalendarGrid({
                           </span>
                         )}
                       </div>
+                      {renderLessonMeta?.(lesson)}
                     </button>
                   );
                 })}

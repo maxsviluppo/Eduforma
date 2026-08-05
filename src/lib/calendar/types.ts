@@ -43,6 +43,28 @@ export type Teacher = {
   schoolId?: string;
   bio?: string;
   active?: boolean;
+  /** Date preferite dal docente per nuove lezioni */
+  preferredDates?: string[];
+  /** Date da evitare segnalate dal docente */
+  excludedDates?: string[];
+  /** Disponibilità generale per fascia oraria */
+  availability?: TeacherAvailability;
+  /** Impegni personali che bloccano la programmazione */
+  commitments?: TeacherCommitment[];
+};
+
+export type TeacherAvailability = {
+  morning: boolean;
+  afternoon: boolean;
+};
+
+export type TeacherCommitmentBand = "mattina" | "pomeriggio" | "giornata";
+
+export type TeacherCommitment = {
+  id: string;
+  teacherId: string;
+  date: string;
+  band: TeacherCommitmentBand;
 };
 
 export type Room = {
@@ -96,6 +118,9 @@ export type Lesson = {
   teacherId: string;
   dadLink?: string;
   notes?: string;
+  /** Segnalazione docente: lezione da spostare */
+  needsReschedule?: boolean;
+  rescheduleNote?: string;
 };
 
 export type CalendarDayNote = {

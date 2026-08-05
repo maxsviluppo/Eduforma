@@ -15,6 +15,14 @@ import { autoScheduleLessonDates, hasTeacherTimeConflict } from "@/lib/calendar/
 import { useCalendar } from "@/lib/calendar/CalendarProvider";
 import type { CourseCategory, Lesson, Modality } from "@/lib/calendar/types";
 import { COURSE_CATEGORY_LABELS, addHoursToTime, findTeacherOverlaps, toIsoDate } from "@/lib/calendar/types";
+import {
+  COMMITMENT_BAND_LABELS,
+  COMMITMENT_BAND_STYLES,
+  getTeacherSlotPlanningBlock,
+  mergedTeacherPlanningPrefs,
+  teacherCommitments,
+  type TeacherDatePrefs,
+} from "@/lib/calendar/teacher-availability";
 
 const WEEKDAY_OPTIONS = [
   { id: 0, label: "Lun" },
@@ -145,9 +153,9 @@ function isLessonSlotBusy(
   );
 }
 
-type TeacherDatePrefs = { preferred: string[]; excluded: string[] };
+type TeacherDatePrefsLocal = TeacherDatePrefs;
 
-function emptyTeacherPrefs(): TeacherDatePrefs {
+function emptyTeacherPrefs(): TeacherDatePrefsLocal {
   return { preferred: [], excluded: [] };
 }
 
@@ -175,7 +183,7 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
 
   const [selectedTeacherIds, setSelectedTeacherIds] = useState<string[]>([]);
   const [teacherLessonQuotas, setTeacherLessonQuotas] = useState<Record<string, number>>({});
-  const [teacherPrefs, setTeacherPrefs] = useState<Record<string, TeacherDatePrefs>>({});
+  const [teacherPrefs, setTeacherPrefs] = useState<Record<string, TeacherDatePrefsLocal>>({});
   /** Docente attivo nel box programmazione (switch) */
   const [focusTeacherId, setFocusTeacherId] = useState<string>("");
 
@@ -300,9 +308,14 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
     );
   }, [form.title, state.courses]);
 
-  const focusPrefs = teacherPrefs[focusTeacherId] ?? emptyTeacherPrefs();
-  const preferredDates = focusPrefs.preferred;
-  const excludedDates = focusPrefs.excluded;
+  const focusTeacher = state.teachers.find((t) => t.id === focusTeacherId);
+  const focusMergedPrefs = mergedTeacherPlanningPrefs(
+    focusTeacher,
+    teacherPrefs[focusTeacherId]
+  );
+  const preferredDates = focusMergedPrefs.preferred;
+  const excludedDates = focusMergedPrefs.excluded;
+  const focusTeacherCommitments = teacherCommitments(focusTeacher);
 
   const pendingLessonDates = useMemo(
     () =>
@@ -415,6 +428,35 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
     return indexes;
   }, [previewOverlaps, previewLessons, plannedLessons]);
 
+  const getMergedPrefsForTeacher = (teacherId: string) => {
+    const teacher = state.teachers.find((t) => t.id === teacherId);
+    return mergedTeacherPlanningPrefs(teacher, teacherPrefs[teacherId]);
+  };
+
+  const getPlanningBlockForLesson = (index: number): string | null => {
+    const lesson = plannedLessons[index];
+    if (!lesson?.date) return null;
+    const teacherId = effectiveTeacherForLesson(
+      index,
+      plannedLessons,
+      selectedTeacherIds,
+      teacherLessonQuotas
+    );
+    const teacher = state.teachers.find((t) => t.id === teacherId);
+    return getTeacherSlotPlanningBlock(teacher, lesson.date, lesson.startTime);
+  };
+
+  const teacherConstraintViolations = useMemo(
+    () =>
+      plannedLessons.some(
+        (lesson, index) =>
+          Boolean(lesson.date) &&
+          confirmedSlots.has(index) &&
+          Boolean(getPlanningBlockForLesson(index))
+      ),
+    [plannedLessons, confirmedSlots, selectedTeacherIds, teacherLessonQuotas, teacherPrefs, state.teachers]
+  );
+
   const canSubmit =
     form.title.trim() &&
     !duplicateCourseName &&
@@ -424,7 +466,8 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
     allDatesConfirmed &&
     hoursOk &&
     spareHours === 0 &&
-    previewOverlaps.length === 0;
+    previewOverlaps.length === 0 &&
+    !teacherConstraintViolations;
 
   const overlapDates = useMemo(
     () => [...new Set(previewOverlaps.map((o) => o.date))],
@@ -442,7 +485,6 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
       : focusTeacherId;
 
   const activeLessonTeacher = state.teachers.find((t) => t.id === activeLessonTeacherId);
-  const focusTeacher = state.teachers.find((t) => t.id === focusTeacherId);
   const activeTeacherColor = activeLessonTeacherId
     ? teacherAccentColor(activeLessonTeacherId, selectedTeacherIds)
     : focusTeacherId
@@ -588,7 +630,8 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
 
     plannedLessons.forEach((lesson, index) => {
       const tid = teacherIdsPerSlot[index] ?? "";
-      const prefs = teacherPrefs[tid] ?? emptyTeacherPrefs();
+      const teacher = state.teachers.find((t) => t.id === tid);
+      const prefs = getMergedPrefsForTeacher(tid);
       const slot = lessonSlot(lesson);
       const blockedByOtherTeachers = [
         ...new Set(
@@ -610,6 +653,7 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
           ...baseTeacherLessons.filter((l) => l.teacherId === tid),
           ...runningAssigned.filter((l) => l.teacherId === tid),
         ],
+        slotBlocked: (iso, s) => Boolean(getTeacherSlotPlanningBlock(teacher, iso, s.startTime)),
       });
       dates.push(date ?? "");
       if (date) {
@@ -645,6 +689,11 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
       );
       if (
         otherTeacherSameDay ||
+        getTeacherSlotPlanningBlock(
+          state.teachers.find((t) => t.id === lessonTeacherId),
+          lesson.date,
+          lesson.startTime
+        ) ||
         isLessonSlotBusy(
           index,
           lesson.date,
@@ -667,7 +716,7 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
     setActiveSlot(null);
     setScheduleError(
       failed > 0
-        ? `${failed} lezione/i non assegnate: evita stesso giorno per docenti diversi, conflitti orari o date non disponibili.`
+        ? `${failed} lezione/i non assegnate: rispetta preferenze/esclusioni/impegni del docente, evita stesso giorno per docenti diversi o conflitti orari.`
         : null
     );
 
@@ -816,6 +865,16 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
       );
       return;
     }
+    const teacher = state.teachers.find((t) => t.id === lessonTeacherId);
+    const planningBlock = getTeacherSlotPlanningBlock(
+      teacher,
+      lesson.date,
+      lesson.startTime
+    );
+    if (planningBlock) {
+      setScheduleError(`Impossibile confermare: ${planningBlock}.`);
+      return;
+    }
     if (
       isLessonSlotBusy(
         index,
@@ -927,6 +986,18 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
       return;
     }
 
+    const slotTeacher = state.teachers.find((t) => t.id === slotTeacherId);
+    const lesson = plannedLessons[activeSlot];
+    const planningBlock = getTeacherSlotPlanningBlock(
+      slotTeacher,
+      date,
+      lesson?.startTime ?? "09:00"
+    );
+    if (planningBlock) {
+      setScheduleError(`${planningBlock}. Scegli un'altra data o modifica l'orario.`);
+      return;
+    }
+
     if (
       isLessonSlotBusy(
         activeSlot,
@@ -951,6 +1022,8 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
 
   const removePlanningDate = (date: string, kind: "prefer" | "exclude") => {
     if (!focusTeacherId) return;
+    if (kind === "prefer" && focusMergedPrefs.persistedPreferred.includes(date)) return;
+    if (kind === "exclude" && focusMergedPrefs.persistedExcluded.includes(date)) return;
     setTeacherPrefs((prev) => {
       const current = prev[focusTeacherId] ?? emptyTeacherPrefs();
       return {
@@ -1011,10 +1084,14 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
       sessionsCount: plannedLessons.length,
       manualLessons,
       preferredDates: [
-        ...new Set(selectedTeacherIds.flatMap((id) => teacherPrefs[id]?.preferred ?? [])),
+        ...new Set(
+          selectedTeacherIds.flatMap((id) => getMergedPrefsForTeacher(id).preferred)
+        ),
       ],
       excludedDates: [
-        ...new Set(selectedTeacherIds.flatMap((id) => teacherPrefs[id]?.excluded ?? [])),
+        ...new Set(
+          selectedTeacherIds.flatMap((id) => getMergedPrefsForTeacher(id).excluded)
+        ),
       ],
     });
 
@@ -1449,7 +1526,8 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
                 </button>
               </div>
               <p className="mt-1 text-xs text-ink-soft">
-                Passa da un docente all&apos;altro per preferenze, esclusioni e impegni negli altri corsi. Tutte le lezioni restano in lista.
+                Passa da un docente all&apos;altro per vedere preferenze, esclusioni e impegni
+                segnalati dal docente. La generazione automatica li rispetta.
               </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {selectedTeacherIds.map((id) => {
@@ -1500,6 +1578,52 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
                 })}
               </div>
             </div>
+
+            {focusTeacher && (
+              <div
+                className="rounded-2xl px-3 py-3"
+                style={{
+                  ...solidBorderStyle(`${focusTeacherColor}55`),
+                  backgroundColor: `${focusTeacherColor}0d`,
+                }}
+              >
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-ink-soft">
+                  Vincoli segnalati dal docente · {focusTeacher.name}
+                </p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                  <div className="rounded-lg border border-emerald-200 bg-white/80 px-2.5 py-2 text-xs">
+                    <p className="font-bold text-emerald-800">
+                      {focusMergedPrefs.persistedPreferred.length} preferite
+                    </p>
+                    <p className="text-emerald-900/80">Dal pannello docente</p>
+                  </div>
+                  <div className="rounded-lg border border-rose-200 bg-white/80 px-2.5 py-2 text-xs">
+                    <p className="font-bold text-rose-800">
+                      {focusMergedPrefs.persistedExcluded.length} escluse
+                    </p>
+                    <p className="text-rose-900/80">Dal pannello docente</p>
+                  </div>
+                  <div className="rounded-lg border border-violet-200 bg-white/80 px-2.5 py-2 text-xs">
+                    <p className="font-bold text-violet-800">
+                      {focusTeacherCommitments.length} impegni
+                    </p>
+                    <p className="text-violet-900/80">Mattina / pomeriggio / giornata</p>
+                  </div>
+                </div>
+                {focusTeacherCommitments.length > 0 && (
+                  <ul className="mt-2 flex flex-wrap gap-1.5">
+                    {focusTeacherCommitments.map((c) => (
+                      <li
+                        key={c.id}
+                        className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${COMMITMENT_BAND_STYLES[c.band].chip}`}
+                      >
+                        {c.date} · {COMMITMENT_BAND_LABELS[c.band]}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
 
             {focusTeacher && (
               <div
@@ -1612,6 +1736,14 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
                   ? teacherAccentColor(assignedTeacherId, selectedTeacherIds)
                   : "#94a3b8";
                 const hasOverlap = overlappingPlannedIndexes.has(index);
+                const lessonTeacher = state.teachers.find((t) => t.id === assignedTeacherId);
+                const lessonMergedPrefs = mergedTeacherPlanningPrefs(
+                  lessonTeacher,
+                  assignedTeacherId ? teacherPrefs[assignedTeacherId] : undefined
+                );
+                const planningBlock =
+                  lesson.date &&
+                  getTeacherSlotPlanningBlock(lessonTeacher, lesson.date, lesson.startTime);
                 return (
                   <div
                     key={lesson.id}
@@ -1658,6 +1790,11 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
                             · orario in conflitto
                           </span>
                         )}
+                        {!hasOverlap && planningBlock && (
+                          <span className="ml-2 text-[10px] font-bold uppercase text-amber-700">
+                            · vincolo docente
+                          </span>
+                        )}
                         {!hasOverlap && confirmed && (
                           <span className="ml-2 inline-flex items-center gap-1 text-[10px] font-bold uppercase text-emerald-700">
                             <Check className="h-3 w-3" /> confermata
@@ -1687,11 +1824,14 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
                       {lesson.date
                         ? formatPlanDate(lesson.date)
                         : "Clicca una data nel calendario"}
-                      {lesson.date && excludedDates.includes(lesson.date) && (
-                        <span className="ml-2 font-bold text-rose-600">· data da evitare</span>
+                      {lesson.date && lessonMergedPrefs.excluded.includes(lesson.date) && (
+                        <span className="ml-2 font-bold text-rose-600">· data esclusa</span>
                       )}
-                      {lesson.date && preferredDates.includes(lesson.date) && (
+                      {lesson.date && lessonMergedPrefs.preferred.includes(lesson.date) && (
                         <span className="ml-2 font-bold text-emerald-700">· preferita</span>
+                      )}
+                      {planningBlock && (
+                        <span className="mt-1 block font-bold text-amber-800">{planningBlock}</span>
                       )}
                     </p>
 
@@ -1938,14 +2078,14 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
           <p className="text-xs text-ink-soft">
             {calendarMode === "lesson"
               ? activeSlot !== null && activeLessonTeacher
-                ? `Lezione ${activeSlot + 1} → ${activeLessonTeacher.name}: 1° click sul giorno, 2° click per confermare. Verde = mattina, giallo = pomeriggio; iniziali = docente.`
-                : "Assegna lezione: seleziona la lezione, scegli il docente, poi la data. Verde = mattina, giallo = pomeriggio."
+                ? `Lezione ${activeSlot + 1} → ${activeLessonTeacher.name}: verde=preferita, rosa=esclusa, colori=impegni docente. Date bloccate non assegnabili.`
+                : "Assegna lezione: verde=preferita, rosa=esclusa, ambra/indaco/viola=impegni docente."
               : calendarMode === "prefer"
                 ? focusTeacher
-                  ? `Preferenze per ${focusTeacher.name}: clicca i giorni ideali (usati in generazione automatica).`
+                  ? `Preferenze aggiuntive per ${focusTeacher.name} (si sommano a quelle del pannello docente).`
                   : "Seleziona un docente nello switch programmazione, poi segna le preferenze."
                 : focusTeacher
-                  ? `Esclusioni per ${focusTeacher.name}: clicca i giorni da evitare.`
+                  ? `Esclusioni aggiuntive per ${focusTeacher.name} (si sommano a quelle del pannello docente).`
                   : "Seleziona un docente nello switch programmazione, poi segna le esclusioni."}
           </p>
 
@@ -1955,23 +2095,28 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
                 Date preferite{focusTeacher ? ` · ${focusTeacher.name.split(" ")[0]}` : ""}
               </p>
               <p className="mt-1 text-xs text-emerald-900/80">
-                Preferenze del docente attivo (switch in programmazione lezioni).
+                Preferenze del docente attivo (pannello docente + aggiunte qui).
               </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {preferredDates.length === 0 && (
                   <span className="text-xs text-emerald-800/70">Nessuna</span>
                 )}
-                {preferredDates.map((date) => (
+                {preferredDates.map((date) => {
+                  const fromTeacher = focusMergedPrefs.persistedPreferred.includes(date);
+                  return (
                   <button
                     key={date}
                     type="button"
                     onClick={() => removePlanningDate(date, "prefer")}
-                    className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-emerald-800"
-                    title="Rimuovi"
+                    className={`rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-emerald-800 ${fromTeacher ? "cursor-default opacity-90" : ""}`}
+                    title={fromTeacher ? "Impostata dal docente" : "Rimuovi"}
+                    disabled={fromTeacher}
                   >
-                    {formatPlanDate(date)} ×
+                    {formatPlanDate(date)}
+                    {fromTeacher ? " · docente" : " ×"}
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
             <div className="rounded-2xl border border-rose-200/80 bg-rose-50/60 p-3">
@@ -1979,23 +2124,28 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
                 Date da escludere{focusTeacher ? ` · ${focusTeacher.name.split(" ")[0]}` : ""}
               </p>
               <p className="mt-1 text-xs text-rose-900/80">
-                Esclusioni del docente attivo (switch in programmazione lezioni).
+                Esclusioni del docente attivo (pannello docente + aggiunte qui).
               </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {excludedDates.length === 0 && (
                   <span className="text-xs text-rose-800/70">Nessuna</span>
                 )}
-                {excludedDates.map((date) => (
+                {excludedDates.map((date) => {
+                  const fromTeacher = focusMergedPrefs.persistedExcluded.includes(date);
+                  return (
                   <button
                     key={date}
                     type="button"
                     onClick={() => removePlanningDate(date, "exclude")}
-                    className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-rose-800"
-                    title="Rimuovi"
+                    className={`rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-rose-800 ${fromTeacher ? "cursor-default opacity-90" : ""}`}
+                    title={fromTeacher ? "Impostata dal docente" : "Rimuovi"}
+                    disabled={fromTeacher}
                   >
-                    {formatPlanDate(date)} ×
+                    {formatPlanDate(date)}
+                    {fromTeacher ? " · docente" : " ×"}
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -2032,6 +2182,7 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
             markConfirmedDates={confirmedLessonDates}
             markOverlapDates={overlapDates}
             markTeacherBusyDates={teacherOtherDates}
+            markCommitments={focusTeacherCommitments}
           />
             </>
           )}
@@ -2050,7 +2201,9 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
                       ? "Inserisci il numero di alunni (minimo 1)."
                       : previewOverlaps.length > 0
                       ? "Risolvi gli accavallamenti orari prima di creare il corso."
-                      : spareHours > 0.01
+                      : teacherConstraintViolations
+                        ? "Alcune lezioni violano preferenze, esclusioni o impegni del docente."
+                        : spareHours > 0.01
                         ? `Distribuisci ${spareHours}h ancora in riserva.`
                         : !hoursOk
                           ? "Allinea le ore totali del corso con le lezioni."

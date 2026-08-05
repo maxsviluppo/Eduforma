@@ -1,11 +1,12 @@
 "use client";
 
 import { AppShell } from "@/components/AppShell";
-import { BookOpen, CalendarDays, LayoutDashboard } from "lucide-react";
+import { BookOpen, CalendarClock, CalendarDays, LayoutDashboard } from "lucide-react";
 
 const nav = [
   { href: "/docente", label: "Home", icon: LayoutDashboard },
   { href: "/docente/calendario", label: "Calendario", icon: CalendarDays },
+  { href: "/docente/disponibilita", label: "Disponibilità", icon: CalendarClock },
   { href: "/docente/corsi", label: "Corsi", icon: BookOpen },
 ];
 

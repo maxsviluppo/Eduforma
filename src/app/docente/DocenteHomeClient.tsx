@@ -2,10 +2,18 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Clock3, MonitorPlay, PlayCircle } from "lucide-react";
+import { AlertTriangle, Clock3, MonitorPlay, PlayCircle } from "lucide-react";
 import { useCalendar } from "@/lib/calendar/CalendarProvider";
 import { ModalityBadge } from "@/components/calendar/ModalityBadge";
 import { MonthCalendar } from "@/components/calendar/MonthCalendar";
+import {
+  countTeacherProblems,
+  getLessonProblems,
+  rescheduleDates,
+  teacherCommitments,
+  teacherExcludedDates,
+  teacherPreferredDates,
+} from "@/lib/calendar/teacher-availability";
 import { isToday, toIsoDate } from "@/lib/calendar/types";
 
 export default function DocenteHomeClient() {
@@ -37,6 +45,79 @@ export default function DocenteHomeClient() {
   );
   const list = todayLessons.length > 0 ? todayLessons : weekLessons.slice(0, 5);
   const nextLive = weekLessons.find((l) => l.modality !== "aula" && l.dadLink);
+  const problemCount = countTeacherProblems(myLessons, teacher);
+
+  const preferredDates = teacherPreferredDates(teacher);
+  const excludedDates = teacherExcludedDates(teacher);
+  const commitments = teacherCommitments(teacher);
+  const rescheduleDateMarks = rescheduleDates(myLessons);
+  const problematicIds = useMemo(
+    () => myLessons.filter((l) => getLessonProblems(l, teacher)).map((l) => l.id),
+    [myLessons, teacher]
+  );
+
+  const renderLesson = (lesson: (typeof myLessons)[number], showDate?: boolean) => {
+    const course = getCourse(lesson.courseId);
+    const room = lesson.roomId ? getRoom(lesson.roomId) : undefined;
+    const problems = getLessonProblems(lesson, teacher);
+
+    return (
+      <li
+        key={lesson.id}
+        className={`rounded-2xl border bg-white/80 p-3.5 ${
+          problems?.severity === "critical"
+            ? "border-amber-400 bg-amber-50/50 ring-1 ring-amber-300/50"
+            : "border-line/70"
+        }`}
+        style={{
+          borderLeftWidth: 4,
+          borderLeftColor: course?.color ?? "#0f8f8a",
+        }}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <span className="inline-flex items-center gap-1.5 text-sm font-bold text-teal-deep">
+            <Clock3 className="h-4 w-4" />
+            {lesson.startTime} – {lesson.endTime}
+          </span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {lesson.needsReschedule && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-950">
+                <AlertTriangle className="h-3 w-3" />
+                Da spostare
+              </span>
+            )}
+            <ModalityBadge modality={lesson.modality} compact />
+          </div>
+        </div>
+        {showDate && (
+          <p className="mt-1 text-[10px] font-bold uppercase text-ink-soft">
+            {lesson.date}
+          </p>
+        )}
+        <p className="mt-2 text-base font-bold text-ink">{lesson.title}</p>
+        <p className="text-xs text-ink-soft">
+          {course?.title}
+          {room ? ` · ${room.name}` : ""}
+        </p>
+        {problems && (
+          <p className="mt-2 text-xs font-semibold text-amber-900">
+            {problems.reasons[0]}
+          </p>
+        )}
+        {lesson.dadLink && (
+          <a
+            href={lesson.dadLink}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3 inline-flex min-h-[40px] items-center gap-2 rounded-full bg-azure/10 px-3.5 py-2 text-xs font-bold text-azure"
+          >
+            <MonitorPlay className="h-4 w-4" />
+            Apri DAD
+          </a>
+        )}
+      </li>
+    );
+  };
 
   return (
     <div className="mx-auto max-w-lg space-y-4 lg:mx-0 lg:max-w-none lg:space-y-6">
@@ -48,9 +129,27 @@ export default function DocenteHomeClient() {
           Il tuo calendario
         </h1>
         <p className="mt-2 text-sm text-ink-soft">
-          Solo le lezioni di <strong>{teacher?.name ?? "…"}</strong> · {myLessons.length} totali
+          Solo le lezioni di <strong>{teacher?.name ?? "…"}</strong> · {myLessons.length}{" "}
+          totali
         </p>
       </div>
+
+      {problemCount > 0 && (
+        <Link
+          href="/docente/disponibilita"
+          className="flex items-start gap-3 rounded-[1.3rem] border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950 transition hover:bg-amber-100/80"
+        >
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+          <div>
+            <p className="text-sm font-bold">
+              {problemCount} lezione/i da verificare
+            </p>
+            <p className="mt-1 text-xs text-amber-900/90">
+              Apri Disponibilità per segnalare spostamenti e aggiornare preferenze.
+            </p>
+          </div>
+        </Link>
+      )}
 
       {nextLive && (
         <a
@@ -87,6 +186,11 @@ export default function DocenteHomeClient() {
         filterTeacherId={currentTeacherId}
         highlightTeacherId={currentTeacherId}
         lessons={myLessons}
+        markPreferredDates={preferredDates}
+        markExcludedDates={excludedDates}
+        markCommitments={commitments}
+        markRescheduleDates={rescheduleDateMarks}
+        problematicLessonIds={problematicIds}
       />
 
       <div className="glass rounded-[1.5rem] p-4 md:p-5">
@@ -94,49 +198,9 @@ export default function DocenteHomeClient() {
           Lezioni del {selectedDate ?? "—"}
         </h2>
         <ul className="mt-3 space-y-3">
-          {(dayLessons.length > 0 ? dayLessons : list).map((lesson) => {
-            const course = getCourse(lesson.courseId);
-            const room = lesson.roomId ? getRoom(lesson.roomId) : undefined;
-            return (
-              <li
-                key={lesson.id}
-                className="rounded-2xl border border-line/70 bg-white/80 p-3.5"
-                style={{
-                  borderLeftWidth: 4,
-                  borderLeftColor: course?.color ?? "#0f8f8a",
-                }}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <span className="inline-flex items-center gap-1.5 text-sm font-bold text-teal-deep">
-                    <Clock3 className="h-4 w-4" />
-                    {lesson.startTime} – {lesson.endTime}
-                  </span>
-                  <ModalityBadge modality={lesson.modality} compact />
-                </div>
-                {!isToday(lesson.date) && dayLessons.length === 0 && (
-                  <p className="mt-1 text-[10px] font-bold uppercase text-ink-soft">
-                    {lesson.date}
-                  </p>
-                )}
-                <p className="mt-2 text-base font-bold text-ink">{lesson.title}</p>
-                <p className="text-xs text-ink-soft">
-                  {course?.title}
-                  {room ? ` · ${room.name}` : ""}
-                </p>
-                {lesson.dadLink && (
-                  <a
-                    href={lesson.dadLink}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-3 inline-flex min-h-[40px] items-center gap-2 rounded-full bg-azure/10 px-3.5 py-2 text-xs font-bold text-azure"
-                  >
-                    <MonitorPlay className="h-4 w-4" />
-                    Apri DAD
-                  </a>
-                )}
-              </li>
-            );
-          })}
+          {(dayLessons.length > 0 ? dayLessons : list).map((lesson) =>
+            renderLesson(lesson, !isToday(lesson.date) && dayLessons.length === 0)
+          )}
           {dayLessons.length === 0 && list.length === 0 && (
             <p className="rounded-xl border border-dashed border-line px-3 py-8 text-center text-sm text-ink-soft">
               Nessuna lezione assegnata a {teacher?.name}.
@@ -145,12 +209,20 @@ export default function DocenteHomeClient() {
         </ul>
       </div>
 
-      <Link
-        href="/docente/calendario"
-        className="block rounded-[1.2rem] border border-dashed border-teal/30 bg-teal/5 px-4 py-3.5 text-center text-xs font-semibold text-teal-deep"
-      >
-        Vista settimanale completa
-      </Link>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Link
+          href="/docente/disponibilita"
+          className="block rounded-[1.2rem] border border-teal/30 bg-teal/5 px-4 py-3.5 text-center text-xs font-semibold text-teal-deep"
+        >
+          Preferenze, esclusioni e impegni
+        </Link>
+        <Link
+          href="/docente/calendario"
+          className="block rounded-[1.2rem] border border-dashed border-teal/30 bg-teal/5 px-4 py-3.5 text-center text-xs font-semibold text-teal-deep"
+        >
+          Vista settimanale completa
+        </Link>
+      </div>
     </div>
   );
 }

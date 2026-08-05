@@ -38,6 +38,7 @@ export function LessonChip({
   getTeacher,
   size = "sm",
   highlight,
+  problematic,
   className = "",
 }: {
   lesson: Lesson;
@@ -45,6 +46,7 @@ export function LessonChip({
   getTeacher: (id: string) => Teacher | undefined;
   size?: Size;
   highlight?: boolean;
+  problematic?: boolean;
   className?: string;
 }) {
   const color = lessonCourseColor(lesson, getCourse);
@@ -59,7 +61,7 @@ export function LessonChip({
     <span
       className={`flex min-w-0 items-center overflow-hidden rounded ${s.wrap} ${s.pad} text-white ${className} ${
         highlight ? "ring-1 ring-white/80" : ""
-      }`}
+      } ${problematic ? "ring-2 ring-amber-300 ring-offset-1" : ""}`}
       style={{ backgroundColor: color }}
       title={`${time} ${courseSigla}-${teacherSigla} · ${title}`}
     >
@@ -78,6 +80,7 @@ export function LessonChipList({
   max,
   size = "sm",
   highlightTeacherId,
+  problematicLessonIds,
   layout = "stack",
 }: {
   lessons: Lesson[];
@@ -86,6 +89,7 @@ export function LessonChipList({
   max: number;
   size?: Size;
   highlightTeacherId?: string;
+  problematicLessonIds?: Set<string>;
   layout?: "stack" | "wrap";
 }) {
   const visible = lessons.slice(0, max);
@@ -109,6 +113,7 @@ export function LessonChipList({
           highlight={Boolean(
             highlightTeacherId && lesson.teacherId === highlightTeacherId
           )}
+          problematic={problematicLessonIds?.has(lesson.id)}
         />
       ))}
       {extra > 0 && (

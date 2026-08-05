@@ -28,6 +28,8 @@ export type AutoScheduleInput = {
    * non assegnare lo stesso giorno a docenti diversi.
    */
   blockedDatesForOtherTeachers?: string[];
+  /** Vincoli extra per data/fascia (impegni, disponibilità docente) */
+  slotBlocked?: (date: string, slot: AutoScheduleSlot) => boolean;
 };
 
 export type AssignedSlot = {
@@ -125,6 +127,7 @@ function findDateForSlot(
       return null;
     }
     if (hasTeacherTimeConflict(iso, slot, teacherLessons, assigned, slotTeacherId)) return null;
+    if (input.slotBlocked?.(iso, slot)) return null;
     registerDate(iso, weekCount, monthCount);
     assigned.push({ date: iso, slot, teacherId: slotTeacherId });
     return iso;
