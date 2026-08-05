@@ -3,7 +3,6 @@ import { BrandMark } from "./BrandMark";
 
 const links = [
   { href: "/#accessi", label: "Accessi" },
-  { href: "/piani", label: "Piani" },
   { href: "/#funzioni", label: "Funzioni" },
 ];
 
@@ -23,11 +22,8 @@ export function SiteHeader() {
         ))}
       </nav>
       <div className="flex items-center gap-2">
-        <Link href="/#accessi" className="btn-ghost !py-2.5 !px-4 text-sm">
+        <Link href="/#accessi" className="btn-primary !py-2.5 !px-4 text-sm">
           Entra
-        </Link>
-        <Link href="/piani" className="btn-primary !py-2.5 !px-4 text-sm">
-          Vedi piani
         </Link>
       </div>
     </header>

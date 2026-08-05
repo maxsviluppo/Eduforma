@@ -2,6 +2,7 @@
 
 import { AppShell } from "@/components/AppShell";
 import {
+  BookMarked,
   BookOpen,
   Building2,
   CalendarDays,
@@ -11,6 +12,7 @@ import {
 
 const nav = [
   { href: "/admin", label: "Home", icon: LayoutDashboard },
+  { href: "/admin/corsi", label: "Corsi", icon: BookMarked },
   { href: "/admin/scuola", label: "Scuola", icon: Building2 },
   { href: "/admin/docenti", label: "Docenti", icon: GraduationCap },
   { href: "/admin/calendario", label: "Calendario", icon: CalendarDays },

@@ -2,26 +2,20 @@ import Link from "next/link";
 import {
   CalendarDays,
   FileStack,
-  Smartphone,
   Video,
-  Wallet,
 } from "lucide-react";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SceneAtmosphere } from "@/components/SceneAtmosphere";
 import { RoleAccessCard } from "@/components/RoleAccessCard";
-import { PricingGrid } from "@/components/PricingGrid";
 import { ROLES, SITE } from "@/lib/site";
+
+const PUBLIC_ROLES = ROLES.filter((role) => role.id !== "studente");
 
 const features = [
   {
     icon: CalendarDays,
     title: "Calendario & orari",
     text: "Corsi, lezioni, aule e disponibilità docenti in un unico piano.",
-  },
-  {
-    icon: Wallet,
-    title: "Anagrafe & rate",
-    text: "Studenti, iscrizioni, pagamenti e attestati sempre allineati.",
   },
   {
     icon: FileStack,
@@ -31,12 +25,7 @@ const features = [
   {
     icon: Video,
     title: "DAD & Expert Call",
-    text: "Strumenti per lezioni remote e supporto video verso lo studente.",
-  },
-  {
-    icon: Smartphone,
-    title: "Mobile-first studente",
-    text: "Ascolto e video pratico ottimizzati per uso in mobilità.",
+    text: "Strumenti per lezioni remote e supporto video verso gli iscritti.",
   },
 ];
 
@@ -61,24 +50,21 @@ export default function HomePage() {
             <Link href="#accessi" className="btn-primary">
               Entra nella piattaforma
             </Link>
-            <Link href="/piani" className="btn-ghost">
-              Scopri i 3 piani
-            </Link>
           </div>
         </section>
 
         <section id="accessi" className="mx-auto max-w-6xl px-5 pb-20 md:px-8">
           <div className="mb-8 max-w-xl">
             <h2 className="font-display text-3xl font-bold text-ink md:text-4xl">
-              Tre ambienti. Un sistema.
+              Due ambienti. Un sistema.
             </h2>
             <p className="mt-3 text-ink-soft">
-              Home di accesso dedicate ad amministrazione, docenti e studenti —
+              Home di accesso dedicate ad amministrazione e docenti —
               autorizzazioni gestite dall&apos;admin.
             </p>
           </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            {ROLES.map((role) => (
+          <div className="grid gap-4 md:grid-cols-2">
+            {PUBLIC_ROLES.map((role) => (
               <RoleAccessCard key={role.id} {...role} />
             ))}
           </div>
@@ -88,7 +74,7 @@ export default function HomePage() {
           <div className="glass rounded-[2rem] p-7 md:p-10">
             <h2 className="font-display text-3xl font-bold text-ink">Cosa gestisce</h2>
             <p className="mt-2 max-w-2xl text-ink-soft">
-              Dalla configurazione della scuola alla lezione sul telefono dello studente.
+              Dalla configurazione della scuola alla lezione in aula o in DAD.
             </p>
             <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {features.map((item) => {
@@ -110,21 +96,6 @@ export default function HomePage() {
               })}
             </div>
           </div>
-        </section>
-
-        <section className="mx-auto max-w-6xl px-5 pb-24 md:px-8">
-          <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h2 className="font-display text-3xl font-bold text-ink md:text-4xl">
-                Piani abbonamento
-              </h2>
-              <p className="mt-2 text-ink-soft">Tre fasce chiare. Il dettaglio lo raffiniamo dopo.</p>
-            </div>
-            <Link href="/piani" className="btn-ghost text-sm">
-              Vai alla pagina piani
-            </Link>
-          </div>
-          <PricingGrid />
         </section>
       </main>
 

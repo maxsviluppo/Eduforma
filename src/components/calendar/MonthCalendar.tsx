@@ -2,33 +2,16 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useCalendar } from "@/lib/calendar/CalendarProvider";
+import { LessonChipList } from "@/components/calendar/LessonChip";
 import {
   MONTH_NAMES,
   WEEKDAY_SHORT,
   getMonthGrid,
-  isMorningLesson,
   isToday,
   shiftMonth,
+  sortLessonsByTime,
   type Lesson,
 } from "@/lib/calendar/types";
-
-const MORNING_BG = "rgba(134, 239, 172, 0.55)"; // verde
-const AFTERNOON_BG = "rgba(250, 204, 21, 0.5)"; // giallo
-const EMPTY_BG = "transparent";
-
-const TEACHER_DOT_COLORS = ["#0f8f8a", "#3b82c4", "#7c5cbf", "#d97706", "#e11d48"] as const;
-
-function teacherColor(teacherId: string, teachers: { id: string }[]): string {
-  const index = teachers.findIndex((t) => t.id === teacherId);
-  return TEACHER_DOT_COLORS[index >= 0 ? index % TEACHER_DOT_COLORS.length : 0];
-}
-
-function teacherInitials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
-}
 
 export function MonthCalendar({
   year,
@@ -61,7 +44,6 @@ export function MonthCalendar({
   markConfirmedDates?: string[];
   markOverlapDates?: string[];
   markTeacherBusyDates?: string[];
-  /** Mostra cursore e hint per giorni con accavallamento (es. dashboard → calendario) */
   overlapDatesActionable?: boolean;
 }) {
   const { state, getCourse, getTeacher } = useCalendar();
@@ -133,11 +115,11 @@ export function MonthCalendar({
         {cells.map((date, idx) => {
           if (!date) {
             return (
-              <div key={`empty-${idx}`} className="aspect-square md:aspect-auto md:min-h-[72px]" />
+              <div key={`empty-${idx}`} className="aspect-square md:aspect-auto md:min-h-[88px]" />
             );
           }
 
-          const dayLessons = lessonsByDate.get(date) ?? [];
+          const dayLessons = sortLessonsByTime(lessonsByDate.get(date) ?? []);
           const selected = selectedDate === date;
           const today = isToday(date);
           const preferred = markPreferredDates?.includes(date);
@@ -148,9 +130,6 @@ export function MonthCalendar({
           const teacherBusy = markTeacherBusyDates?.includes(date);
           const dayNum = Number(date.slice(8, 10));
           const inMonth = Number(date.slice(5, 7)) === month + 1;
-
-          const morning = dayLessons.filter((l) => isMorningLesson(l.startTime));
-          const afternoon = dayLessons.filter((l) => !isMorningLesson(l.startTime));
           const highlightedLessons = highlightTeacherId
             ? dayLessons.filter((l) => l.teacherId === highlightTeacherId)
             : [];
@@ -175,104 +154,36 @@ export function MonthCalendar({
                           ? "border-teal/40"
                           : "border-transparent hover:border-line";
 
-          const tooltipLines = dayLessons.map((lesson) => {
-            const course = getCourse(lesson.courseId);
-            const teacher = getTeacher(lesson.teacherId);
-            const band = isMorningLesson(lesson.startTime) ? "Mattina" : "Pomeriggio";
-            return `${band} ${lesson.startTime} · ${teacher?.name ?? "Docente"} · ${course?.title ?? lesson.title}`;
-          });
-          const dayTitle = [
-            ...tooltipLines,
-            overlap ? "⚠ Accavallamento docente" : "",
-            overlap && overlapDatesActionable ? "Clicca per modificare nel calendario" : "",
-          ]
-            .filter(Boolean)
-            .join("\n");
-
           return (
             <button
               key={date}
               type="button"
               onClick={() => onSelectDate(date)}
-              title={dayTitle || undefined}
-              className={`relative flex min-h-[72px] flex-col overflow-hidden rounded-xl border text-left transition md:min-h-[92px] ${borderClass} ${
+              className={`relative flex min-h-[88px] flex-col overflow-hidden rounded-xl border p-1.5 text-left transition md:min-h-[100px] ${borderClass} ${
                 !inMonth ? "opacity-40" : ""
               }`}
             >
               {teacherBusy && (
-                <span
-                  className="pointer-events-none absolute inset-0 z-[1] bg-slate-400/14"
-                  title="Docente già impegnato in altri corsi"
-                />
+                <span className="pointer-events-none absolute inset-0 z-[1] bg-slate-400/14" />
               )}
 
-              {/* Sfondo: verde mattina / giallo pomeriggio */}
-              <span
-                className="pointer-events-none absolute inset-x-0 top-0 h-1/2"
-                style={{ background: morning.length ? MORNING_BG : EMPTY_BG }}
-              />
-              <span
-                className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2"
-                style={{ background: afternoon.length ? AFTERNOON_BG : EMPTY_BG }}
-              />
-
-              <span className="relative z-10 flex h-full w-full flex-col items-start p-1.5 md:p-2">
-                <span className="flex w-full items-start justify-between gap-0.5">
-                  <span
-                    className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
-                      today ? "bg-teal text-white" : "bg-transparent text-ink"
-                    }`}
-                  >
-                    {dayNum}
-                  </span>
-                  {(morning.length > 0 || afternoon.length > 0) && (
-                    <span className="rounded bg-transparent px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide text-ink-soft">
-                      {morning.length > 0 && afternoon.length > 0
-                        ? "M+P"
-                        : morning.length > 0
-                          ? "AM"
-                          : "PM"}
-                    </span>
-                  )}
+              <span className="relative z-10 flex h-full w-full flex-col gap-1">
+                <span
+                  className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                    today ? "bg-teal text-white" : "bg-transparent text-ink"
+                  }`}
+                >
+                  {dayNum}
                 </span>
 
-                <div className="mt-auto flex w-full flex-col gap-0.5">
-                  {dayLessons.slice(0, 2).map((lesson) => {
-                    const course = getCourse(lesson.courseId);
-                    const teacher = getTeacher(lesson.teacherId);
-                    const color = teacherColor(lesson.teacherId, state.teachers);
-                    const isHighlight =
-                      highlightTeacherId && lesson.teacherId === highlightTeacherId;
-                    const teacherLabel = teacher?.name ?? "Docente";
-                    return (
-                      <span
-                        key={lesson.id}
-                        className={`flex min-w-0 items-center gap-1 rounded px-0.5 py-0.5 text-[9px] font-bold leading-tight bg-transparent ${
-                          isHighlight ? "ring-1 ring-teal/50" : ""
-                        }`}
-                        style={{ color }}
-                        title={`${lesson.startTime}–${lesson.endTime} ${teacherLabel} · ${course?.title ?? lesson.title}`}
-                      >
-                        <span
-                          className="grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full text-[7px] font-black text-white"
-                          style={{ background: color }}
-                        >
-                          {teacher ? teacherInitials(teacher.name) : "?"}
-                        </span>
-                        <span className="min-w-0 truncate text-ink">
-                          <span className="font-black tabular-nums">{lesson.startTime}</span>
-                          {" "}
-                          {teacherLabel}
-                        </span>
-                      </span>
-                    );
-                  })}
-                  {dayLessons.length > 2 && (
-                    <span className="px-0.5 text-[9px] font-bold text-ink-soft">
-                      +{dayLessons.length - 2} lezioni
-                    </span>
-                  )}
-                </div>
+                <LessonChipList
+                  lessons={dayLessons}
+                  getCourse={getCourse}
+                  getTeacher={getTeacher}
+                  max={4}
+                  size="xs"
+                  highlightTeacherId={highlightTeacherId}
+                />
               </span>
             </button>
           );
@@ -281,25 +192,10 @@ export function MonthCalendar({
 
       <div className="mt-3 flex flex-wrap gap-3 text-[10px] font-semibold text-ink-soft">
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-3 w-4 rounded-sm" style={{ background: MORNING_BG }} /> Mattina (verde)
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-3 w-4 rounded-sm" style={{ background: AFTERNOON_BG }} /> Pomeriggio
-          (giallo)
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="grid h-3.5 w-3.5 place-items-center rounded-full bg-teal text-[7px] font-black text-white">
-            IN
-          </span>
-          Iniziali docente + orario
+          <span className="h-3 w-6 rounded bg-teal" /> Colore corso · ora + sigla
         </span>
         {showPlanningMarks && (
           <>
-            {markTeacherBusyDates?.length ? (
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-3 w-4 rounded-sm bg-slate-300/35" /> Docente altri corsi
-              </span>
-            ) : null}
             {markOverlapDates?.length ? (
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-3 w-4 rounded-sm border-2 border-red-500 bg-red-50" />{" "}
@@ -308,16 +204,10 @@ export function MonthCalendar({
             ) : null}
             <span className="inline-flex items-center gap-1.5">
               <span className="h-3 w-4 rounded-sm border-2 border-dashed border-amber-400" /> In
-              attesa conferma
+              attesa
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="h-3 w-4 rounded-sm border-2 border-teal-500" /> Lezione confermata
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-3 w-4 rounded-sm border-2 border-emerald-400" /> Preferita
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-3 w-4 rounded-sm border-2 border-rose-400" /> Da escludere
+              <span className="h-3 w-4 rounded-sm border-2 border-teal-500" /> Confermata
             </span>
           </>
         )}

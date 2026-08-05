@@ -1,6 +1,25 @@
 export type Modality = "aula" | "dad" | "ibrida";
 export type CourseStatus = "bozza" | "attivo" | "concluso";
 
+export type CourseCategory =
+  | "sicurezza"
+  | "haccp"
+  | "lingua"
+  | "informatica"
+  | "soft-skill"
+  | "tecnico"
+  | "altro";
+
+export const COURSE_CATEGORY_LABELS: Record<CourseCategory, string> = {
+  sicurezza: "Sicurezza sul lavoro",
+  haccp: "HACCP / Igiene",
+  lingua: "Lingue",
+  informatica: "Informatica",
+  "soft-skill": "Soft skill",
+  tecnico: "Tecnico / Professionale",
+  altro: "Altro",
+};
+
 export type School = {
   id: string;
   name: string;
@@ -43,12 +62,15 @@ export type Course = {
   id: string;
   title: string;
   description: string;
+  category: CourseCategory;
   totalHours: number;
   daysCount: number;
   teacherId: string;
   /** Docenti aggiuntivi oltre al referente principale */
   teacherIds?: string[];
   studentIds: string[];
+  /** Numero complessivo di alunni iscritti al corso */
+  studentCount: number;
   modality: Modality;
   roomId?: string;
   schoolId: string;
@@ -76,6 +98,16 @@ export type Lesson = {
   notes?: string;
 };
 
+export type CalendarDayNote = {
+  id: string;
+  date: string;
+  text: string;
+  /** Colore post-it */
+  color?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type CalendarState = {
   schools: School[];
   rooms: Room[];
@@ -83,7 +115,10 @@ export type CalendarState = {
   students: Student[];
   courses: Course[];
   lessons: Lesson[];
+  dayNotes: CalendarDayNote[];
 };
+
+export type CalendarViewMode = "day" | "week" | "month" | "year";
 
 export const DEMO_TEACHER_ID = "doc-marco";
 export const DEMO_STUDENT_ID = "stud-laura";
@@ -324,3 +359,40 @@ export function shiftMonth(
   const d = new Date(year, month + delta, 1);
   return { year: d.getFullYear(), month: d.getMonth() };
 }
+
+export function shiftDay(isoDate: string, delta: number): string {
+  const d = new Date(`${isoDate}T12:00:00`);
+  d.setDate(d.getDate() + delta);
+  return toIsoDate(d);
+}
+
+/** Settimana Lun–Dom contenente la data */
+export function getWeekRange(isoDate: string): string[] {
+  const d = new Date(`${isoDate}T12:00:00`);
+  const jsDay = d.getDay();
+  const mondayOffset = jsDay === 0 ? -6 : 1 - jsDay;
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + mondayOffset);
+  return Array.from({ length: 7 }, (_, i) => {
+    const day = new Date(monday);
+    day.setDate(monday.getDate() + i);
+    return toIsoDate(day);
+  });
+}
+
+export function sortLessonsByTime(lessons: Lesson[]): Lesson[] {
+  return [...lessons].sort((a, b) =>
+    a.date === b.date
+      ? a.startTime.localeCompare(b.startTime)
+      : a.date.localeCompare(b.date)
+  );
+}
+
+export const POST_IT_COLORS = [
+  "#fef08a",
+  "#fde68a",
+  "#fed7aa",
+  "#bbf7d0",
+  "#bae6fd",
+  "#fbcfe8",
+] as const;

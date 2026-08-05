@@ -1,23 +1,30 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ArrowRight,
+  BookMarked,
   BookOpen,
   Building2,
   CalendarDays,
   Clock3,
   GraduationCap,
   Plus,
-  Users,
 } from "lucide-react";
-import { MonthCalendar } from "@/components/calendar/MonthCalendar";
+import { CalendarPlanner } from "@/components/calendar/CalendarPlanner";
+import { QuickLessonModal } from "@/components/calendar/QuickLessonModal";
 import { ModalityBadge } from "@/components/calendar/ModalityBadge";
 import { useCalendar } from "@/lib/calendar/CalendarProvider";
 import { STATUS_LABELS, toIsoDate } from "@/lib/calendar/types";
+import {
+  EMPTY_CALENDAR_LESSON_FILTERS,
+  filterLessons,
+  hasActiveLessonFilters,
+  type CalendarLessonFilters,
+} from "@/lib/calendar/lesson-filters";
 
 export default function AdminHomeClient() {
   const router = useRouter();
@@ -37,6 +44,11 @@ export default function AdminHomeClient() {
   const [month, setMonth] = useState(now.getMonth());
   const [selectedDate, setSelectedDate] = useState<string | null>(toIsoDate(now));
   const [highlightTeacherId, setHighlightTeacherId] = useState("");
+  const [quickAddDate, setQuickAddDate] = useState<string | null>(null);
+  const [lessonFilters, setLessonFilters] = useState<CalendarLessonFilters>(
+    EMPTY_CALENDAR_LESSON_FILTERS
+  );
+  const overlapNavTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
   const todayStr = toIsoDate(now);
@@ -81,18 +93,34 @@ export default function AdminHomeClient() {
   };
 
   const handleSelectDate = (date: string) => {
+    setSelectedDate(date);
+    if (overlapNavTimer.current) {
+      clearTimeout(overlapNavTimer.current);
+      overlapNavTimer.current = null;
+    }
     if (overlapDates.includes(date)) {
-      const dayOverlap = overlaps.find((o) => o.date === date);
-      openCalendarForDate(date, dayOverlap?.teacherId);
+      overlapNavTimer.current = setTimeout(() => {
+        const dayOverlap = overlaps.find((o) => o.date === date);
+        openCalendarForDate(date, dayOverlap?.teacherId);
+      }, 280);
       return;
     }
-    setSelectedDate(date);
   };
 
-  const dayLessons = useMemo(
-    () => (selectedDate ? getLessonsForDate(selectedDate) : []),
-    [selectedDate, getLessonsForDate, state.lessons]
-  );
+  const handleQuickAddLesson = (date: string) => {
+    if (overlapNavTimer.current) {
+      clearTimeout(overlapNavTimer.current);
+      overlapNavTimer.current = null;
+    }
+    setSelectedDate(date);
+    setQuickAddDate(date);
+  };
+
+  const dayLessons = useMemo(() => {
+    if (!selectedDate) return [];
+    const raw = getLessonsForDate(selectedDate);
+    return filterLessons(raw, lessonFilters, getCourse, getRoom);
+  }, [selectedDate, getLessonsForDate, state.lessons, lessonFilters, getCourse, getRoom]);
 
   const upcomingLessons = useMemo(
     () =>
@@ -227,7 +255,7 @@ export default function AdminHomeClient() {
             </div>
           </div>
 
-          <MonthCalendar
+          <CalendarPlanner
             year={year}
             month={month}
             selectedDate={selectedDate}
@@ -239,6 +267,10 @@ export default function AdminHomeClient() {
             highlightTeacherId={highlightTeacherId || undefined}
             markOverlapDates={overlapDates}
             overlapDatesActionable
+            enableNotes
+            onQuickAddLesson={handleQuickAddLesson}
+            lessonFilters={lessonFilters}
+            onLessonFiltersChange={setLessonFilters}
           />
 
           <div className="glass rounded-[1.5rem] p-5">
@@ -263,6 +295,7 @@ export default function AdminHomeClient() {
                 )}
                 <span className="text-xs font-semibold text-ink-soft">
                   {dayLessons.length} in programma
+                  {hasActiveLessonFilters(lessonFilters) && " (filtrate)"}
                 </span>
               </div>
             </div>
@@ -299,7 +332,9 @@ export default function AdminHomeClient() {
               })}
               {dayLessons.length === 0 && (
                 <p className="rounded-xl border border-dashed border-line px-3 py-8 text-center text-sm text-ink-soft">
-                  Nessuna lezione in questo giorno.
+                  {hasActiveLessonFilters(lessonFilters)
+                    ? "Nessuna lezione corrisponde ai filtri selezionati."
+                    : "Nessuna lezione in questo giorno."}
                 </p>
               )}
             </ul>
@@ -377,6 +412,12 @@ export default function AdminHomeClient() {
           <div className="grid gap-2">
             {[
               {
+                title: "Catalogo corsi",
+                text: "Elenco, categorie, finalizza e modifica ogni corso.",
+                href: "/admin/corsi",
+                icon: BookMarked,
+              },
+              {
                 title: "Calendario corsi",
                 text: "Pianifica, modifica lezioni e importa dati.",
                 href: "/admin/calendario",
@@ -393,12 +434,6 @@ export default function AdminHomeClient() {
                 text: "Anagrafica e specialità.",
                 href: "/admin/docenti",
                 icon: GraduationCap,
-              },
-              {
-                title: "Studenti",
-                text: "Elenco iscritti.",
-                href: "/admin/studenti",
-                icon: Users,
               },
               {
                 title: "Learning",
@@ -430,6 +465,13 @@ export default function AdminHomeClient() {
           </div>
         </aside>
       </div>
+
+      <QuickLessonModal
+        open={Boolean(quickAddDate)}
+        date={quickAddDate ?? selectedDate ?? todayStr}
+        onClose={() => setQuickAddDate(null)}
+        onSaved={(d) => setSelectedDate(d)}
+      />
     </div>
   );
 }

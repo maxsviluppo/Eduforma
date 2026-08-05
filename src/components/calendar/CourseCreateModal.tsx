@@ -13,8 +13,8 @@ import {
 } from "@/components/calendar/teacher-course-plan";
 import { autoScheduleLessonDates, hasTeacherTimeConflict } from "@/lib/calendar/auto-schedule";
 import { useCalendar } from "@/lib/calendar/CalendarProvider";
-import type { Lesson, Modality } from "@/lib/calendar/types";
-import { addHoursToTime, findTeacherOverlaps, toIsoDate } from "@/lib/calendar/types";
+import type { CourseCategory, Lesson, Modality } from "@/lib/calendar/types";
+import { COURSE_CATEGORY_LABELS, addHoursToTime, findTeacherOverlaps, toIsoDate } from "@/lib/calendar/types";
 
 const WEEKDAY_OPTIONS = [
   { id: 0, label: "Lun" },
@@ -61,7 +61,7 @@ function accentLeftBorderStyle(color: string, leftWidth = 3): CSSProperties {
 type Props = {
   open: boolean;
   onClose: () => void;
-  onCreated?: () => void;
+  onCreated?: (courseId: string) => void;
 };
 
 function defaultLessonModality(courseModality: Modality): "aula" | "dad" {
@@ -165,10 +165,12 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
   const [form, setForm] = useState({
     title: "",
     description: "",
+    category: "tecnico" as CourseCategory,
     schoolId: demoSchoolId,
     roomId: "",
     modality: "ibrida" as Modality,
     totalHours: 16,
+    studentCount: 1,
   });
 
   const [selectedTeacherIds, setSelectedTeacherIds] = useState<string[]>([]);
@@ -219,8 +221,10 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
       ...f,
       title: "",
       description: "",
+      category: "tecnico",
       schoolId: demoSchoolId,
       roomId: "",
+      studentCount: 1,
     }));
   }, [open, demoSchoolId]);
 
@@ -415,6 +419,7 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
     form.title.trim() &&
     !duplicateCourseName &&
     selectedTeacherIds.length > 0 &&
+    form.studentCount >= 1 &&
     plannedLessons.length > 0 &&
     allDatesConfirmed &&
     hoursOk &&
@@ -990,14 +995,16 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
       ),
     }));
 
-    createCourseWithSchedule({
+    const { courseId } = createCourseWithSchedule({
       title: form.title.trim(),
       description: form.description.trim() || `Corso ${form.title.trim()}`,
+      category: form.category,
       totalHours: scheduledHours,
       daysCount: plannedLessons.length,
       teacherId: selectedTeacherIds[0],
       teacherIds: selectedTeacherIds.length > 1 ? selectedTeacherIds : undefined,
       studentIds: [],
+      studentCount: form.studentCount,
       modality: form.modality,
       roomId: form.modality === "dad" ? undefined : roomId,
       schoolId: form.schoolId,
@@ -1016,7 +1023,7 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
       title: "",
       description: "",
     }));
-    onCreated?.();
+    if (courseId) onCreated?.(courseId);
     onClose();
   };
 
@@ -1130,6 +1137,23 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
               className="min-h-[72px] w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm"
             />
+
+            <select
+              value={form.category}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  category: e.target.value as CourseCategory,
+                }))
+              }
+              className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm"
+            >
+              {Object.entries(COURSE_CATEGORY_LABELS).map(([key, label]) => (
+                <option key={key} value={key}>
+                  Categoria: {label}
+                </option>
+              ))}
+            </select>
 
             <select
               value={form.schoolId}
@@ -1263,6 +1287,30 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
                 />
               </label>
             </div>
+
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.12em] text-ink-soft">
+                Numero alunni
+              </span>
+              <input
+                type="number"
+                required
+                min={1}
+                step={1}
+                value={form.studentCount}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    studentCount: Math.max(1, Number(e.target.value) || 1),
+                  }))
+                }
+                className="w-full rounded-2xl border border-line bg-white px-3 py-3 text-sm"
+                placeholder="Es. 12"
+              />
+              <p className="mt-1 text-[11px] text-ink-soft">
+                Totale iscritti al corso (solo il numero complessivo).
+              </p>
+            </label>
 
             <div
               className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${
@@ -1998,7 +2046,9 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
                   ? "Nome corso già usato: scegli un titolo univoco."
                   : selectedTeacherIds.length === 0
                     ? "Seleziona almeno un docente per il corso."
-                    : previewOverlaps.length > 0
+                    : form.studentCount < 1
+                      ? "Inserisci il numero di alunni (minimo 1)."
+                      : previewOverlaps.length > 0
                       ? "Risolvi gli accavallamenti orari prima di creare il corso."
                       : spareHours > 0.01
                         ? `Distribuisci ${spareHours}h ancora in riserva.`

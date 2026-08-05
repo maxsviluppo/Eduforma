@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   Building2,
@@ -22,21 +23,30 @@ import {
   STATUS_LABELS,
   courseTeacherIds,
   findOverlapsForDraft,
-  isMorningLesson,
   toIsoDate,
 } from "@/lib/calendar/types";
 import { scheduledHoursForCourse } from "@/lib/calendar/demo-data";
+import { personAbbrev } from "@/lib/calendar/calendar-display";
+import { LessonChip } from "@/components/calendar/LessonChip";
 import { parseCalendarSpreadsheet, readSpreadsheetFile } from "@/lib/calendar/import";
 import type { ImportPreview } from "@/lib/calendar/CalendarProvider";
 import { ConfirmModal, OverlapWarningModal } from "@/components/calendar/ConfirmModal";
 import { CourseCreateModal } from "@/components/calendar/CourseCreateModal";
-import { MonthCalendar } from "@/components/calendar/MonthCalendar";
+import { CalendarPlanner } from "@/components/calendar/CalendarPlanner";
+import { QuickLessonModal } from "@/components/calendar/QuickLessonModal";
 import { ModalityBadge } from "@/components/calendar/ModalityBadge";
 import { SimulationLinksBanner } from "@/components/calendar/SimulationLinksBanner";
+import {
+  EMPTY_CALENDAR_LESSON_FILTERS,
+  filterLessons,
+  hasActiveLessonFilters,
+  type CalendarLessonFilters,
+} from "@/lib/calendar/lesson-filters";
 
 type Tab = "calendario" | "corsi" | "anagrafiche" | "import";
 
 export default function AdminCalendarClient() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const {
     state,
@@ -64,6 +74,9 @@ export default function AdminCalendarClient() {
   const [month, setMonth] = useState(now.getMonth());
   const [selectedDate, setSelectedDate] = useState<string | null>(toIsoDate(now));
   const [editingLesson, setEditingLesson] = useState<Lesson | null>(null);
+  const [editingOriginalTeacherId, setEditingOriginalTeacherId] = useState<string | null>(
+    null
+  );
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteCourseId, setDeleteCourseId] = useState<string | null>(null);
   const [overlapModal, setOverlapModal] = useState<{
@@ -75,6 +88,10 @@ export default function AdminCalendarClient() {
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [highlightTeacherId, setHighlightTeacherId] = useState<string>("");
+  const [quickAddDate, setQuickAddDate] = useState<string | null>(null);
+  const [lessonFilters, setLessonFilters] = useState<CalendarLessonFilters>(
+    EMPTY_CALENDAR_LESSON_FILTERS
+  );
 
   const [newTeacher, setNewTeacher] = useState({
     name: "",
@@ -84,10 +101,11 @@ export default function AdminCalendarClient() {
   const [newRoom, setNewRoom] = useState({ name: "", capacity: 20 });
   const [schoolForm, setSchoolForm] = useState({ name: "", address: "", city: "" });
 
-  const dayLessons = useMemo(
-    () => (selectedDate ? getLessonsForDate(selectedDate) : []),
-    [selectedDate, getLessonsForDate, state.lessons]
-  );
+  const dayLessons = useMemo(() => {
+    if (!selectedDate) return [];
+    const raw = getLessonsForDate(selectedDate);
+    return filterLessons(raw, lessonFilters, getCourse, getRoom);
+  }, [selectedDate, getLessonsForDate, state.lessons, lessonFilters, getCourse, getRoom]);
 
   const stats = useMemo(
     () => ({
@@ -156,6 +174,7 @@ export default function AdminCalendarClient() {
         startTime: draft.startTime,
         endTime: draft.endTime,
         modality: draft.modality,
+        teacherId: draft.teacherId,
         roomId: draft.modality === "dad" ? undefined : draft.roomId,
         notes: draft.notes,
         dadLink:
@@ -163,7 +182,14 @@ export default function AdminCalendarClient() {
             ? draft.dadLink || `https://meet.aulanova.it/${draft.courseId}`
             : undefined,
       });
+      if (
+        editingOriginalTeacherId &&
+        draft.teacherId !== editingOriginalTeacherId
+      ) {
+        setHighlightTeacherId(draft.teacherId);
+      }
       setEditingLesson(null);
+      setEditingOriginalTeacherId(null);
       setSelectedDate(draft.date);
     });
   };
@@ -310,7 +336,7 @@ export default function AdminCalendarClient() {
             </div>
           </div>
 
-          <MonthCalendar
+          <CalendarPlanner
             year={year}
             month={month}
             selectedDate={selectedDate}
@@ -321,6 +347,10 @@ export default function AdminCalendarClient() {
             }}
             highlightTeacherId={highlightTeacherId || undefined}
             markOverlapDates={overlapDates}
+            enableNotes
+            onQuickAddLesson={setQuickAddDate}
+            lessonFilters={lessonFilters}
+            onLessonFiltersChange={setLessonFilters}
           />
 
           <div className="glass rounded-[1.5rem] p-5">
@@ -328,14 +358,29 @@ export default function AdminCalendarClient() {
               <h2 className="font-display text-xl font-bold text-ink">
                 Lezioni del {selectedDate ?? "—"}
               </h2>
-              <span className="text-xs font-semibold text-ink-soft">
-                {dayLessons.length} lezione/i
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                {selectedDate && (
+                  <button
+                    type="button"
+                    onClick={() => setQuickAddDate(selectedDate)}
+                    className="btn-primary !py-2 gap-1.5 text-xs"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Nuova lezione
+                  </button>
+                )}
+                <span className="text-xs font-semibold text-ink-soft">
+                  {dayLessons.length} lezione/i
+                  {hasActiveLessonFilters(lessonFilters) && " (filtrate)"}
+                </span>
+              </div>
             </div>
 
             {dayLessons.length === 0 ? (
               <p className="rounded-xl border border-dashed border-line px-4 py-8 text-center text-sm text-ink-soft">
-                Nessuna lezione in questo giorno. Crea un corso o importa un foglio.
+                {hasActiveLessonFilters(lessonFilters)
+                  ? "Nessuna lezione corrisponde ai filtri selezionati in questo giorno."
+                  : "Nessuna lezione in questo giorno. Crea un corso o importa un foglio."}
               </p>
             ) : (
               <ul className="space-y-3">
@@ -343,13 +388,15 @@ export default function AdminCalendarClient() {
                   const course = getCourse(lesson.courseId);
                   const room = lesson.roomId ? getRoom(lesson.roomId) : undefined;
                   const teacher = getTeacher(lesson.teacherId);
-                  const morning = isMorningLesson(lesson.startTime);
+                  const school = room
+                    ? getSchool(room.schoolId)
+                    : course
+                      ? getSchool(course.schoolId)
+                      : undefined;
                   return (
                     <li
                       key={lesson.id}
-                      className={`rounded-2xl border-y border-r border-line/70 p-4 ${
-                        morning ? "bg-emerald-50/80" : "bg-yellow-50/80"
-                      }`}
+                      className="rounded-2xl border border-line/70 bg-white/85 p-4"
                       style={{
                         borderLeftWidth: 4,
                         borderLeftColor: course?.color ?? "#0f8f8a",
@@ -362,26 +409,32 @@ export default function AdminCalendarClient() {
                             <p className="text-xs font-bold text-ink-soft">
                               {lesson.startTime} – {lesson.endTime}
                             </p>
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                                morning
-                                  ? "bg-emerald-200/80 text-emerald-900"
-                                  : "bg-yellow-200/90 text-yellow-900"
-                              }`}
-                            >
-                              {morning ? "Mattina" : "Pomeriggio"}
-                            </span>
                           </div>
                           <p className="mt-1 font-display text-lg font-bold text-ink">
                             {lesson.title}
                           </p>
                           <p className="text-sm text-ink-soft">{course?.title}</p>
-                          <div className="mt-2 flex flex-wrap gap-2">
+                          {teacher && (
+                            <p className="mt-2 inline-flex items-center gap-2 rounded-xl bg-teal/10 px-2.5 py-1.5 text-sm font-bold text-teal-deep">
+                              <GraduationCap className="h-4 w-4 shrink-0" />
+                              {teacher.name}
+                              <span className="text-[10px] font-bold uppercase text-teal-deep/70">
+                                {personAbbrev(teacher.name)}
+                              </span>
+                            </p>
+                          )}
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <LessonChip
+                              lesson={lesson}
+                              getCourse={getCourse}
+                              getTeacher={getTeacher}
+                              size="sm"
+                              className="inline-flex w-auto"
+                            />
                             <ModalityBadge modality={lesson.modality} />
-                            {teacher && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-transparent px-1 py-0.5 text-xs font-bold text-teal-deep">
-                                <GraduationCap className="h-3 w-3" />
-                                {teacher.name} · {lesson.startTime}–{lesson.endTime}
+                            {school && (
+                              <span className="text-xs font-semibold text-ink-soft">
+                                {school.name}
                               </span>
                             )}
                             {room && (
@@ -398,7 +451,10 @@ export default function AdminCalendarClient() {
                           <button
                             type="button"
                             className="btn-ghost !px-3 !py-2 text-xs"
-                            onClick={() => setEditingLesson(lesson)}
+                            onClick={() => {
+                              setEditingLesson(lesson);
+                              setEditingOriginalTeacherId(lesson.teacherId);
+                            }}
                           >
                             <Pencil className="h-3.5 w-3.5" />
                             Modifica
@@ -442,7 +498,15 @@ export default function AdminCalendarClient() {
           </div>
 
           <div className="space-y-3">
-            <h2 className="font-display text-xl font-bold text-ink">Lista corsi</h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="font-display text-xl font-bold text-ink">Lista corsi</h2>
+              <Link
+                href="/admin/corsi"
+                className="text-sm font-bold text-teal-deep hover:underline"
+              >
+                Catalogo completo →
+              </Link>
+            </div>
             {state.courses.map((course) => {
               const teacherNames = courseTeacherIds(course)
                 .map((id) => getTeacher(id)?.name)
@@ -456,7 +520,12 @@ export default function AdminCalendarClient() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-display text-lg font-bold text-ink">{course.title}</h3>
+                        <Link
+                          href={`/admin/corsi/${course.id}`}
+                          className="font-display text-lg font-bold text-ink hover:text-teal-deep"
+                        >
+                          {course.title}
+                        </Link>
                         <ModalityBadge modality={course.modality} compact />
                         <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold uppercase text-ink-soft">
                           {STATUS_LABELS[course.status]}
@@ -743,13 +812,73 @@ export default function AdminCalendarClient() {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="font-display text-xl font-bold text-ink">Modifica lezione</h3>
-            <input
-              value={editingLesson.title}
-              onChange={(e) =>
-                setEditingLesson({ ...editingLesson, title: e.target.value })
-              }
-              className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm"
-            />
+            {(() => {
+              const course = getCourse(editingLesson.courseId);
+              const currentTeacher = getTeacher(editingLesson.teacherId);
+              const originalTeacher = editingOriginalTeacherId
+                ? getTeacher(editingOriginalTeacherId)
+                : undefined;
+              return (
+                <div className="rounded-xl border border-line/70 bg-white/70 px-3 py-2 text-xs text-ink-soft">
+                  <p className="font-bold text-ink">{course?.title ?? "Corso"}</p>
+                  {originalTeacher && currentTeacher && (
+                    <p className="mt-1">
+                      Docente:{" "}
+                      <span className="font-bold text-teal-deep">
+                        {currentTeacher.name}
+                      </span>
+                      {editingLesson.teacherId !== editingOriginalTeacherId && (
+                        <span className="text-amber-800">
+                          {" "}
+                          (prima: {originalTeacher.name})
+                        </span>
+                      )}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+            <label className="block">
+              <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-ink-soft">
+                Docente assegnato
+              </span>
+              <select
+                value={editingLesson.teacherId}
+                onChange={(e) =>
+                  setEditingLesson({
+                    ...editingLesson,
+                    teacherId: e.target.value,
+                  })
+                }
+                className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink outline-none focus:border-teal"
+              >
+                {state.teachers
+                  .filter((t) => t.active !== false)
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                      {t.specialty ? ` · ${t.specialty}` : ""}
+                    </option>
+                  ))}
+              </select>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-ink-soft">
+                Cambiando docente, la lezione esce dal calendario del docente
+                precedente e viene registrata su quello selezionato. Il corso
+                viene aggiornato con il nuovo docente se non già presente.
+              </p>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-ink-soft">
+                Titolo lezione
+              </span>
+              <input
+                value={editingLesson.title}
+                onChange={(e) =>
+                  setEditingLesson({ ...editingLesson, title: e.target.value })
+                }
+                className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm"
+              />
+            </label>
             <input
               type="date"
               value={editingLesson.date}
@@ -819,7 +948,10 @@ export default function AdminCalendarClient() {
               <button
                 type="button"
                 className="btn-ghost flex-1"
-                onClick={() => setEditingLesson(null)}
+                onClick={() => {
+                  setEditingLesson(null);
+                  setEditingOriginalTeacherId(null);
+                }}
               >
                 Annulla
               </button>
@@ -831,10 +963,25 @@ export default function AdminCalendarClient() {
         </div>
       )}
 
+      <QuickLessonModal
+        open={Boolean(quickAddDate)}
+        date={quickAddDate ?? selectedDate ?? toIsoDate(now)}
+        onClose={() => setQuickAddDate(null)}
+        onSaved={(d) => {
+          setSelectedDate(d);
+          const parsed = new Date(`${d}T12:00:00`);
+          setYear(parsed.getFullYear());
+          setMonth(parsed.getMonth());
+        }}
+      />
+
       <CourseCreateModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        onCreated={() => setTab("calendario")}
+        onCreated={(courseId) => {
+          setCreateOpen(false);
+          router.push(`/admin/corsi/${courseId}`);
+        }}
       />
 
       <ConfirmModal
@@ -865,7 +1012,10 @@ export default function AdminCalendarClient() {
         onConfirm={() => {
           if (deleteCourseId) {
             deleteCourse(deleteCourseId);
-            if (editingLesson?.courseId === deleteCourseId) setEditingLesson(null);
+            if (editingLesson?.courseId === deleteCourseId) {
+              setEditingLesson(null);
+              setEditingOriginalTeacherId(null);
+            }
           }
           setDeleteCourseId(null);
         }}

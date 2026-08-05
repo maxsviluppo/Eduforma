@@ -15,8 +15,10 @@ import {
   scheduledHoursForCourse,
 } from "./demo-data";
 import type {
+  CalendarDayNote,
   CalendarState,
   Course,
+  CourseCategory,
   CourseStatus,
   Lesson,
   Modality,
@@ -32,25 +34,29 @@ import {
   DEMO_TEACHER_ID,
   addHoursToTime,
   collectLessonDates,
+  courseTeacherIds,
   findOverlapsForDraft,
   findTeacherOverlaps,
   generateId,
   getWeekDates,
   toIsoDate,
   type TeacherOverlap,
+  POST_IT_COLORS,
 } from "./types";
 
-const STORAGE_KEY = "aulanova-calendar-v3";
+const STORAGE_KEY = "aulanova-calendar-v4";
 const SESSION_KEY = "aulanova-session-v1";
 
 export type NewCourseInput = {
   title: string;
   description: string;
+  category?: CourseCategory;
   totalHours: number;
   daysCount: number;
   teacherId: string;
   teacherIds?: string[];
   studentIds: string[];
+  studentCount?: number;
   modality: Modality;
   roomId?: string;
   schoolId: string;
@@ -117,7 +123,9 @@ type CalendarContextValue = {
   addStudent: (name: string, email: string) => void;
   updateSchool: (id: string, data: Partial<School>) => void;
   addSchool: (data: Omit<School, "id">) => string;
-  createCourseWithSchedule: (input: NewCourseInput) => TeacherOverlap | null;
+  createCourseWithSchedule: (
+    input: NewCourseInput
+  ) => { overlap: TeacherOverlap | null; courseId: string | null };
   updateCourse: (id: string, data: Partial<Course>) => void;
   deleteCourse: (id: string) => void;
   concludeCourse: (id: string) => void;
@@ -134,9 +142,15 @@ type CalendarContextValue = {
   getLessonsForTeacher: (teacherId: string, dates?: string[]) => Lesson[];
   getLessonsForStudent: (studentId: string, dates?: string[]) => Lesson[];
   getLessonsForDate: (date: string) => Lesson[];
+  getLessonsForCourse: (courseId: string) => Lesson[];
   getCoursesForStudent: (studentId: string) => Course[];
   getCoursesForTeacher: (teacherId: string) => Course[];
   getCourseProgress: (courseId: string) => number;
+  getDayNotes: (date: string) => CalendarDayNote[];
+  addDayNote: (date: string, text: string) => string;
+  updateDayNote: (id: string, text: string) => void;
+  deleteDayNote: (id: string) => void;
+  hydrated: boolean;
 };
 
 const CalendarContext = createContext<CalendarContextValue | null>(null);
@@ -159,6 +173,12 @@ function mergeById<T extends { id: string }>(existing: T[], incoming: T[]): T[] 
 function normalizeState(parsed: CalendarState): CalendarState {
   return {
     ...parsed,
+    dayNotes: parsed.dayNotes ?? [],
+    courses: (parsed.courses ?? []).map((c) => ({
+      ...c,
+      category: c.category ?? "altro",
+      studentCount: c.studentCount ?? c.studentIds?.length ?? 0,
+    })),
     teachers: parsed.teachers.map((teacher) => {
       const legacy = teacher as Teacher & { preferredDates?: string[]; busyDates?: string[] };
       const { preferredDates: _p, busyDates: _b, ...rest } = legacy;
@@ -345,8 +365,10 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
     [state.lessons, state.teachers]
   );
 
-  const createCourseWithSchedule = useCallback((input: NewCourseInput): TeacherOverlap | null => {
+  const createCourseWithSchedule = useCallback(
+    (input: NewCourseInput): { overlap: TeacherOverlap | null; courseId: string | null } => {
     let overlap: TeacherOverlap | null = null;
+    let createdCourseId: string | null = null;
 
     setState((prev) => {
       const normalizedTitle = input.title.trim().toLocaleLowerCase("it-IT");
@@ -385,16 +407,18 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
         id: generateId("course"),
         title: input.title,
         description: input.description,
+        category: input.category ?? "tecnico",
         totalHours: input.totalHours,
         daysCount: input.daysCount || sessions,
         teacherId: courseTeacherIds[0] ?? input.teacherId,
         teacherIds: courseTeacherIds.length > 1 ? courseTeacherIds : undefined,
         studentIds: input.studentIds,
+        studentCount: input.studentCount ?? input.studentIds.length,
         modality: input.modality,
         roomId: input.roomId,
         schoolId: input.schoolId || prev.schools[0]?.id || DEMO_SCHOOL_ID,
         color,
-        status: "attivo",
+        status: "bozza",
         startDate,
         endDate,
         preferredDates: input.preferredDates?.filter(Boolean),
@@ -449,6 +473,8 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      createdCourseId = course.id;
+
       return {
         ...prev,
         courses: [...prev.courses, course],
@@ -456,7 +482,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
       };
     });
 
-    return overlap;
+    return { overlap, courseId: createdCourseId };
   }, []);
 
   const updateCourse = useCallback((id: string, data: Partial<Course>) => {
@@ -501,10 +527,27 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
       if (!current) return null;
       const draft = { ...current, ...data };
       const overlap = findOverlapsForDraft(state.lessons, state.teachers, draft, id);
-      setState((prev) => ({
-        ...prev,
-        lessons: prev.lessons.map((l) => (l.id === id ? { ...l, ...data } : l)),
-      }));
+      setState((prev) => {
+        let courses = prev.courses;
+        if (data.teacherId && data.teacherId !== current.teacherId) {
+          courses = prev.courses.map((c) => {
+            if (c.id !== current.courseId) return c;
+            const ids = courseTeacherIds(c);
+            if (ids.includes(data.teacherId!)) return c;
+            const nextIds = [...ids, data.teacherId!];
+            return {
+              ...c,
+              teacherIds: nextIds,
+              teacherId: c.teacherId || data.teacherId!,
+            };
+          });
+        }
+        return {
+          ...prev,
+          courses,
+          lessons: prev.lessons.map((l) => (l.id === id ? { ...l, ...data } : l)),
+        };
+      });
       return overlap;
     },
     [state.lessons, state.teachers]
@@ -519,6 +562,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
 
   const applyImport = useCallback((preview: ImportPreview) => {
     setState((prev) => ({
+      ...prev,
       schools: mergeById(prev.schools, preview.schools),
       teachers: mergeById(prev.teachers, preview.teachers),
       rooms: mergeById(prev.rooms, preview.rooms),
@@ -576,6 +620,12 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
     [state.lessons]
   );
 
+  const getLessonsForCourse = useCallback(
+    (courseId: string) =>
+      state.lessons.filter((l) => l.courseId === courseId).sort(sortLessons),
+    [state.lessons]
+  );
+
   const getCoursesForStudent = useCallback(
     (studentId: string) => state.courses.filter((c) => c.studentIds.includes(studentId)),
     [state.courses]
@@ -598,6 +648,47 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
     },
     [state.courses, state.lessons]
   );
+
+  const getDayNotes = useCallback(
+    (date: string) =>
+      state.dayNotes
+        .filter((n) => n.date === date)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    [state.dayNotes]
+  );
+
+  const addDayNote = useCallback((date: string, text: string) => {
+    const id = generateId("note");
+    const now = new Date().toISOString();
+    const color =
+      POST_IT_COLORS[Math.floor(Math.random() * POST_IT_COLORS.length)];
+    setState((prev) => ({
+      ...prev,
+      dayNotes: [
+        ...prev.dayNotes,
+        { id, date, text: text.trim(), color, createdAt: now, updatedAt: now },
+      ],
+    }));
+    return id;
+  }, []);
+
+  const updateDayNote = useCallback((id: string, text: string) => {
+    setState((prev) => ({
+      ...prev,
+      dayNotes: prev.dayNotes.map((n) =>
+        n.id === id
+          ? { ...n, text: text.trim(), updatedAt: new Date().toISOString() }
+          : n
+      ),
+    }));
+  }, []);
+
+  const deleteDayNote = useCallback((id: string) => {
+    setState((prev) => ({
+      ...prev,
+      dayNotes: prev.dayNotes.filter((n) => n.id !== id),
+    }));
+  }, []);
 
   const value: CalendarContextValue = {
     state,
@@ -637,9 +728,15 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
     getLessonsForTeacher,
     getLessonsForStudent,
     getLessonsForDate,
+    getLessonsForCourse,
     getCoursesForStudent,
     getCoursesForTeacher,
     getCourseProgress,
+    getDayNotes,
+    addDayNote,
+    updateDayNote,
+    deleteDayNote,
+    hydrated,
   };
 
   return (
