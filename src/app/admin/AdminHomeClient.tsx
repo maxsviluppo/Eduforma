@@ -25,7 +25,7 @@ import { LessonDetailEditModal } from "@/components/calendar/LessonDetailEditMod
 import { QuickLessonSummarySidebar } from "@/components/calendar/QuickLessonSummarySidebar";
 import { ModalityBadge } from "@/components/calendar/ModalityBadge";
 import { useCalendar } from "@/lib/calendar/CalendarProvider";
-import { STATUS_LABELS, toIsoDate } from "@/lib/calendar/types";
+import { STATUS_LABELS, toIsoDate, type Lesson } from "@/lib/calendar/types";
 import {
   EMPTY_CALENDAR_LESSON_FILTERS,
   filterLessons,
