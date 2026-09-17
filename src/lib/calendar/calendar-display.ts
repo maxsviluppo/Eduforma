@@ -29,16 +29,65 @@ export function lessonCourseColor(
   return getCourse(lesson.courseId)?.color ?? DEFAULT_COURSE_COLOR;
 }
 
+export function schoolAbbrev(name?: string, max = 4): string {
+  if (!name || !name.trim()) return "";
+  const clean = name.trim();
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length === 1) return words[0].slice(0, max).toUpperCase();
+  const stopWords = new Set([
+    "di",
+    "a",
+    "da",
+    "in",
+    "con",
+    "su",
+    "per",
+    "tra",
+    "fra",
+    "del",
+    "della",
+    "delle",
+    "dei",
+    "degli",
+    "il",
+    "lo",
+    "la",
+    "i",
+    "gli",
+    "le",
+    "e",
+    "ed",
+  ]);
+  const significant = words.filter((w) => !stopWords.has(w.toLowerCase()));
+  const target = significant.length > 0 ? significant : words;
+  return target
+    .map((w) => w[0].toUpperCase())
+    .slice(0, max)
+    .join("");
+}
+
 export function lessonChipLabel(
   lesson: Lesson,
   getCourse: (id: string) => Course | undefined,
-  getTeacher: (id: string) => Teacher | undefined
-): { courseSigla: string; teacherSigla: string; time: string; title: string } {
+  getTeacher: (id: string) => Teacher | undefined,
+  getSchool?: (id: string) => { name: string } | undefined
+): {
+  courseSigla: string;
+  teacherSigla: string;
+  schoolSigla: string;
+  studentCount: number;
+  time: string;
+  title: string;
+} {
   const course = getCourse(lesson.courseId);
   const teacher = getTeacher(lesson.teacherId);
+  const school = course && getSchool ? getSchool(course.schoolId) : undefined;
+  const studentCount = course?.studentCount ?? course?.studentIds?.length ?? 0;
   return {
     courseSigla: courseAbbrev(course?.title ?? lesson.title),
     teacherSigla: personAbbrev(teacher?.name ?? "?"),
+    schoolSigla: school ? schoolAbbrev(school.name, 3) : "",
+    studentCount,
     time: lesson.startTime,
     title: course?.title ?? lesson.title,
   };

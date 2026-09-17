@@ -143,7 +143,7 @@ export type CalendarState = {
   dayNotes: CalendarDayNote[];
 };
 
-export type CalendarViewMode = "day" | "week" | "month" | "year";
+export type CalendarViewMode = "day" | "week" | "month" | "year" | "tabular";
 
 export const DEMO_TEACHER_ID = "doc-marco";
 export const DEMO_STUDENT_ID = "stud-laura";

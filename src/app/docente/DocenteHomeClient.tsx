@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Clock3, MonitorPlay, PlayCircle } from "lucide-react";
+import { AlertTriangle, Clock3, MonitorPlay, PlayCircle, StickyNote } from "lucide-react";
 import { useCalendar } from "@/lib/calendar/CalendarProvider";
 import { ModalityBadge } from "@/components/calendar/ModalityBadge";
 import { MonthCalendar } from "@/components/calendar/MonthCalendar";
@@ -14,7 +14,7 @@ import {
   teacherExcludedDates,
   teacherPreferredDates,
 } from "@/lib/calendar/teacher-availability";
-import { isToday, toIsoDate } from "@/lib/calendar/types";
+import { isToday, toIsoDate, MONTH_NAMES } from "@/lib/calendar/types";
 
 export default function DocenteHomeClient() {
   const {
@@ -24,6 +24,8 @@ export default function DocenteHomeClient() {
     getCourse,
     getRoom,
     weekDates,
+    state,
+    getDayNotes,
   } = useCalendar();
 
   const teacher = getTeacher(currentTeacherId);
@@ -54,6 +56,20 @@ export default function DocenteHomeClient() {
   const problematicIds = useMemo(
     () => myLessons.filter((l) => getLessonProblems(l, teacher)).map((l) => l.id),
     [myLessons, teacher]
+  );
+
+  const selectedDateNotes = useMemo(
+    () => (selectedDate ? getDayNotes(selectedDate) : []),
+    [selectedDate, getDayNotes, state.dayNotes]
+  );
+
+  const monthPrefix = `${year}-${String(month + 1).padStart(2, "0")}`;
+  const monthNotes = useMemo(
+    () =>
+      (state.dayNotes ?? [])
+        .filter((n) => n.date.startsWith(monthPrefix))
+        .sort((a, b) => a.date.localeCompare(b.date)),
+    [state.dayNotes, monthPrefix]
   );
 
   const renderLesson = (lesson: (typeof myLessons)[number], showDate?: boolean) => {
@@ -193,6 +209,47 @@ export default function DocenteHomeClient() {
         problematicLessonIds={problematicIds}
       />
 
+      {selectedDateNotes.length > 0 && (
+        <div className="rounded-[1.4rem] border border-amber-300 bg-amber-50/80 p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="grid h-7 w-7 place-items-center rounded-lg bg-amber-200/80 text-amber-900">
+                <StickyNote className="h-4 w-4" />
+              </span>
+              <div>
+                <h3 className="font-display text-sm font-bold text-amber-950">
+                  Note direzione · {selectedDate}
+                </h3>
+                <p className="text-[11px] text-amber-900/80">
+                  Comunicazioni inserite dall&apos;amministrazione per questa data
+                </p>
+              </div>
+            </div>
+            <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+              {selectedDateNotes.length} {selectedDateNotes.length === 1 ? "nota" : "note"}
+            </span>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {selectedDateNotes.map((note) => (
+              <div
+                key={note.id}
+                className="rounded-xl border border-amber-200/90 bg-white p-3 text-xs text-ink shadow-xs"
+                style={{
+                  borderLeftWidth: 4,
+                  borderLeftColor: note.color ?? "#f59e0b",
+                }}
+              >
+                <p className="whitespace-pre-wrap font-medium leading-relaxed">{note.text}</p>
+                <p className="mt-1.5 text-[10px] text-ink-soft">
+                  Nota segreteria / direzione · Aggiornata: {note.updatedAt.slice(0, 10)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="glass rounded-[1.5rem] p-4 md:p-5">
         <h2 className="font-display text-lg font-bold text-ink">
           Lezioni del {selectedDate ?? "—"}
@@ -208,6 +265,59 @@ export default function DocenteHomeClient() {
           )}
         </ul>
       </div>
+
+      {monthNotes.length > 0 && (
+        <div className="glass rounded-[1.5rem] p-4 md:p-5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="grid h-8 w-8 place-items-center rounded-xl bg-teal/10 text-teal-deep">
+                <StickyNote className="h-4 w-4" />
+              </span>
+              <div>
+                <h3 className="font-display text-base font-bold text-ink">
+                  Bacheca comunicazioni amministrazione ({MONTH_NAMES[month]} {year})
+                </h3>
+                <p className="text-xs text-ink-soft">
+                  Tutti i post-it e gli avvisi condivisi dalla segreteria
+                </p>
+              </div>
+            </div>
+            <span className="rounded-full bg-teal/10 px-2.5 py-0.5 text-[10px] font-bold text-teal-deep">
+              {monthNotes.length} note
+            </span>
+          </div>
+
+          <div className="mt-3.5 grid gap-2.5 sm:grid-cols-2">
+            {monthNotes.map((note) => {
+              const isSelected = selectedDate === note.date;
+              return (
+                <button
+                  key={note.id}
+                  type="button"
+                  onClick={() => setSelectedDate(note.date)}
+                  className={`flex flex-col text-left rounded-xl border p-3 transition shadow-xs ${
+                    isSelected
+                      ? "border-teal bg-teal/10 ring-1 ring-teal/30"
+                      : "border-line/70 bg-white/80 hover:bg-white"
+                  }`}
+                  style={{
+                    borderLeftWidth: 4,
+                    borderLeftColor: note.color ?? "#f59e0b",
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-1 text-[10px] font-bold text-ink-soft">
+                    <span className="uppercase tracking-wider">📅 {note.date}</span>
+                    <span>{note.updatedAt.slice(0, 10)}</span>
+                  </div>
+                  <p className="mt-1 text-xs font-medium text-ink line-clamp-3 leading-relaxed">
+                    {note.text}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-2 sm:grid-cols-2">
         <Link

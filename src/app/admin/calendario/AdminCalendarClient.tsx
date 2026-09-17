@@ -34,6 +34,7 @@ import { ConfirmModal, OverlapWarningModal } from "@/components/calendar/Confirm
 import { CourseCreateModal } from "@/components/calendar/CourseCreateModal";
 import { CalendarPlanner } from "@/components/calendar/CalendarPlanner";
 import { QuickLessonModal } from "@/components/calendar/QuickLessonModal";
+import { LessonDetailEditModal } from "@/components/calendar/LessonDetailEditModal";
 import { ModalityBadge } from "@/components/calendar/ModalityBadge";
 import { SimulationLinksBanner } from "@/components/calendar/SimulationLinksBanner";
 import {
@@ -396,6 +397,7 @@ export default function AdminCalendarClient() {
             onQuickAddLesson={setQuickAddDate}
             lessonFilters={lessonFilters}
             onLessonFiltersChange={setLessonFilters}
+            onSelectLesson={(l) => setEditingLesson(l)}
           />
 
           <div className="glass rounded-[1.5rem] p-5">
@@ -857,167 +859,24 @@ export default function AdminCalendarClient() {
       )}
 
       {/* Edit lesson modal */}
-      {editingLesson && (
-        <div
-          className="fixed inset-0 z-[70] flex items-end justify-center bg-ink/30 p-4 backdrop-blur-sm md:items-center"
-          onClick={() => setEditingLesson(null)}
-        >
-          <form
-            onSubmit={handleSaveLesson}
-            className="glass-strong w-full max-w-md space-y-3 rounded-[1.6rem] p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="font-display text-xl font-bold text-ink">Modifica lezione</h3>
-            {(() => {
-              const course = getCourse(editingLesson.courseId);
-              const currentTeacher = getTeacher(editingLesson.teacherId);
-              const originalTeacher = editingOriginalTeacherId
-                ? getTeacher(editingOriginalTeacherId)
-                : undefined;
-              return (
-                <div className="rounded-xl border border-line/70 bg-white/70 px-3 py-2 text-xs text-ink-soft">
-                  <p className="font-bold text-ink">{course?.title ?? "Corso"}</p>
-                  {originalTeacher && currentTeacher && (
-                    <p className="mt-1">
-                      Docente:{" "}
-                      <span className="font-bold text-teal-deep">
-                        {currentTeacher.name}
-                      </span>
-                      {editingLesson.teacherId !== editingOriginalTeacherId && (
-                        <span className="text-amber-800">
-                          {" "}
-                          (prima: {originalTeacher.name})
-                        </span>
-                      )}
-                    </p>
-                  )}
-                </div>
-              );
-            })()}
-            <label className="block">
-              <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-ink-soft">
-                Docente assegnato
-              </span>
-              <select
-                value={editingLesson.teacherId}
-                onChange={(e) =>
-                  setEditingLesson({
-                    ...editingLesson,
-                    teacherId: e.target.value,
-                  })
-                }
-                className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink outline-none focus:border-teal"
-              >
-                {state.teachers
-                  .filter((t) => t.active !== false)
-                  .map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                      {t.specialty ? ` · ${t.specialty}` : ""}
-                    </option>
-                  ))}
-              </select>
-              <p className="mt-1.5 text-[11px] leading-relaxed text-ink-soft">
-                Cambiando docente, la lezione esce dal calendario del docente
-                precedente e viene registrata su quello selezionato. Il corso
-                viene aggiornato con il nuovo docente se non già presente.
-              </p>
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-ink-soft">
-                Titolo lezione
-              </span>
-              <input
-                value={editingLesson.title}
-                onChange={(e) =>
-                  setEditingLesson({ ...editingLesson, title: e.target.value })
-                }
-                className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm"
-              />
-            </label>
-            <input
-              type="date"
-              value={editingLesson.date}
-              onChange={(e) =>
-                setEditingLesson({ ...editingLesson, date: e.target.value })
-              }
-              className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm"
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="time"
-                value={editingLesson.startTime}
-                onChange={(e) =>
-                  setEditingLesson({ ...editingLesson, startTime: e.target.value })
-                }
-                className="rounded-xl border border-line bg-white px-3 py-2 text-sm"
-              />
-              <input
-                type="time"
-                value={editingLesson.endTime}
-                onChange={(e) =>
-                  setEditingLesson({ ...editingLesson, endTime: e.target.value })
-                }
-                className="rounded-xl border border-line bg-white px-3 py-2 text-sm"
-              />
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {(["aula", "dad", "ibrida"] as Modality[]).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setEditingLesson({ ...editingLesson, modality: m })}
-                  className={`rounded-xl border px-2 py-2 text-xs font-bold ${
-                    editingLesson.modality === m
-                      ? "border-teal bg-teal/10 text-teal-deep"
-                      : "border-line"
-                  }`}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
-            {editingLesson.modality !== "dad" && (
-              <select
-                value={editingLesson.roomId ?? ""}
-                onChange={(e) =>
-                  setEditingLesson({ ...editingLesson, roomId: e.target.value })
-                }
-                className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm"
-              >
-                {state.rooms.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <textarea
-              placeholder="Note / avviso"
-              value={editingLesson.notes ?? ""}
-              onChange={(e) =>
-                setEditingLesson({ ...editingLesson, notes: e.target.value })
-              }
-              className="min-h-[70px] w-full rounded-xl border border-line bg-white px-3 py-2 text-sm"
-            />
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                className="btn-ghost flex-1"
-                onClick={() => {
-                  setEditingLesson(null);
-                  setEditingOriginalTeacherId(null);
-                }}
-              >
-                Annulla
-              </button>
-              <button type="submit" className="btn-primary flex-1">
-                Salva
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+      <LessonDetailEditModal
+        open={Boolean(editingLesson)}
+        lesson={editingLesson}
+        onClose={() => {
+          setEditingLesson(null);
+          setEditingOriginalTeacherId(null);
+        }}
+        onSelectDate={(d) => {
+          setSelectedDate(d);
+          const parsed = new Date(`${d}T12:00:00`);
+          setYear(parsed.getFullYear());
+          setMonth(parsed.getMonth());
+        }}
+        onSaved={() => {
+          setEditingLesson(null);
+          setEditingOriginalTeacherId(null);
+        }}
+      />
 
       <QuickLessonModal
         open={Boolean(quickAddDate)}

@@ -1,8 +1,10 @@
 "use client";
 
+import { useMemo } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useCalendar } from "@/lib/calendar/CalendarProvider";
 import { LessonChipList } from "@/components/calendar/LessonChip";
+import { DayNoteIndicator } from "@/components/calendar/DayNotesPanel";
 import {
   MONTH_NAMES,
   WEEKDAY_SHORT,
@@ -73,6 +75,14 @@ export function MonthCalendar({
     list.push(lesson);
     lessonsByDate.set(lesson.date, list);
   }
+
+  const notesByDate = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const note of state.dayNotes ?? []) {
+      map.set(note.date, (map.get(note.date) ?? 0) + 1);
+    }
+    return map;
+  }, [state.dayNotes]);
 
   const go = (delta: number) => {
     const next = shiftMonth(year, month, delta);
@@ -214,12 +224,15 @@ export function MonthCalendar({
               )}
 
               <span className="relative z-10 flex h-full w-full flex-col gap-1">
-                <span
-                  className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
-                    today ? "bg-teal text-white" : "bg-transparent text-ink"
-                  }`}
-                >
-                  {dayNum}
+                <span className="flex w-full items-center justify-between gap-1">
+                  <span
+                    className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                      today ? "bg-teal text-white" : "bg-transparent text-ink"
+                    }`}
+                  >
+                    {dayNum}
+                  </span>
+                  <DayNoteIndicator count={notesByDate.get(date) ?? 0} />
                 </span>
 
                 <LessonChipList
@@ -240,6 +253,9 @@ export function MonthCalendar({
       <div className="mt-3 flex flex-wrap gap-3 text-[10px] font-semibold text-ink-soft">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-3 w-6 rounded bg-teal" /> Colore corso · ora + sigla
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-3 w-4 rounded bg-amber-300" /> Nota / Post-it
         </span>
         {showPlanningMarks && (
           <>

@@ -12,10 +12,17 @@ import {
   CalendarDays,
   Clock3,
   GraduationCap,
+  PanelRightClose,
+  PanelRightOpen,
+  Pencil,
   Plus,
+  Settings2,
+  Zap,
 } from "lucide-react";
 import { CalendarPlanner } from "@/components/calendar/CalendarPlanner";
 import { QuickLessonModal } from "@/components/calendar/QuickLessonModal";
+import { LessonDetailEditModal } from "@/components/calendar/LessonDetailEditModal";
+import { QuickLessonSummarySidebar } from "@/components/calendar/QuickLessonSummarySidebar";
 import { ModalityBadge } from "@/components/calendar/ModalityBadge";
 import { useCalendar } from "@/lib/calendar/CalendarProvider";
 import { STATUS_LABELS, toIsoDate } from "@/lib/calendar/types";
@@ -44,7 +51,14 @@ export default function AdminHomeClient() {
   const [month, setMonth] = useState(now.getMonth());
   const [selectedDate, setSelectedDate] = useState<string | null>(toIsoDate(now));
   const [highlightTeacherId, setHighlightTeacherId] = useState("");
+  const [showSidebar, setShowSidebar] = useState(false);
   const [quickAddDate, setQuickAddDate] = useState<string | null>(null);
+  const [selectedLessonForEdit, setSelectedLessonForEdit] = useState<Lesson | null>(
+    null
+  );
+  const [selectedSidebarLesson, setSelectedSidebarLesson] = useState<Lesson | null>(
+    null
+  );
   const [lessonFilters, setLessonFilters] = useState<CalendarLessonFilters>(
     EMPTY_CALENDAR_LESSON_FILTERS
   );
@@ -151,13 +165,44 @@ export default function AdminHomeClient() {
             Dashboard admin
           </p>
           <h1 className="mt-2 font-display text-3xl font-bold text-ink md:text-4xl">
-            Panoramica {stats.schoolName}
+            Gestione Corsi Formazione
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-ink-soft md:text-base">
             Sintesi operativa e calendario mensile di tutti i corsi, docenti e lezioni programmate.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowSidebar((prev) => !prev)}
+            className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-xs font-bold transition shadow-sm ${
+              showSidebar
+                ? "border-line bg-white text-ink hover:bg-slate-50"
+                : "border-teal/30 bg-teal/10 text-teal-deep hover:bg-teal/20"
+            }`}
+            title={
+              showSidebar
+                ? "Nascondi riquadro laterale"
+                : "Mostra riquadro laterale (prossime lezioni e corsi)"
+            }
+          >
+            {showSidebar ? (
+              <>
+                <PanelRightClose className="h-4 w-4" />
+                <span>Nascondi riquadro</span>
+              </>
+            ) : (
+              <>
+                <PanelRightOpen className="h-4 w-4" />
+                <span>Prossime lezioni & corsi</span>
+                {upcomingLessons.length > 0 && (
+                  <span className="rounded-full bg-teal-deep/10 px-1.5 py-0.5 text-[10px] font-bold text-teal-deep">
+                    {upcomingLessons.length}
+                  </span>
+                )}
+              </>
+            )}
+          </button>
           <Link href="/admin/calendario" className="btn-primary !py-2.5 text-sm">
             <Plus className="h-4 w-4" />
             Gestisci calendario
@@ -232,10 +277,34 @@ export default function AdminHomeClient() {
         })}
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+      <div
+        className={
+          showSidebar
+            ? "grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]"
+            : "space-y-4 w-full"
+        }
+      >
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="font-display text-xl font-bold text-ink">Calendario mensile</h2>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h2 className="font-display text-xl font-bold text-ink">Calendario mensile</h2>
+              {!showSidebar && (
+                <button
+                  type="button"
+                  onClick={() => setShowSidebar(true)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white/90 px-3 py-1.5 text-xs font-bold text-teal-deep shadow-sm transition hover:border-teal hover:bg-white"
+                  title="Mostra prossime lezioni e corsi attivi a destra"
+                >
+                  <PanelRightOpen className="h-3.5 w-3.5" />
+                  <span>Mostra riepilogo</span>
+                  {upcomingLessons.length > 0 && (
+                    <span className="rounded-full bg-teal/15 px-1.5 py-0.5 text-[10px] font-bold text-teal-deep">
+                      {upcomingLessons.length}
+                    </span>
+                  )}
+                </button>
+              )}
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <label className="text-xs font-bold uppercase tracking-[0.12em] text-ink-soft">
                 Evidenzia docente
@@ -252,6 +321,17 @@ export default function AdminHomeClient() {
                   </option>
                 ))}
               </select>
+              {showSidebar && (
+                <button
+                  type="button"
+                  onClick={() => setShowSidebar(false)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white/80 px-3 py-2 text-xs font-semibold text-ink-soft shadow-sm hover:bg-white hover:text-ink"
+                  title="Nascondi pannello laterale"
+                >
+                  <PanelRightClose className="h-4 w-4" />
+                  <span>Chiudi pannello</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -271,6 +351,10 @@ export default function AdminHomeClient() {
             onQuickAddLesson={handleQuickAddLesson}
             lessonFilters={lessonFilters}
             onLessonFiltersChange={setLessonFilters}
+            onSelectLesson={(lesson) => {
+              setSelectedSidebarLesson(lesson);
+              setShowSidebar(true);
+            }}
           />
 
           <div className="glass rounded-[1.5rem] p-5">
@@ -304,10 +388,20 @@ export default function AdminHomeClient() {
                 const course = getCourse(lesson.courseId);
                 const teacher = getTeacher(lesson.teacherId);
                 const room = lesson.roomId ? getRoom(lesson.roomId) : undefined;
+                const isSelectedForSidebar = selectedSidebarLesson?.id === lesson.id;
+
                 return (
                   <li
                     key={lesson.id}
-                    className="rounded-2xl border-y border-r border-line/70 bg-white/80 p-3.5"
+                    onClick={() => {
+                      setSelectedSidebarLesson(lesson);
+                      setShowSidebar(true);
+                    }}
+                    className={`group cursor-pointer rounded-2xl border-y border-r p-3.5 transition ${
+                      isSelectedForSidebar
+                        ? "border-teal bg-teal/5 shadow-sm ring-2 ring-teal/30"
+                        : "border-line/70 bg-white/80 hover:border-teal/50 hover:bg-white hover:shadow-xs"
+                    }`}
                     style={{
                       borderLeftWidth: 4,
                       borderLeftColor: course?.color ?? "#0f8f8a",
@@ -319,13 +413,43 @@ export default function AdminHomeClient() {
                         <Clock3 className="h-4 w-4" />
                         {lesson.startTime} – {lesson.endTime}
                       </span>
-                      <ModalityBadge modality={lesson.modality} compact />
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <ModalityBadge modality={lesson.modality} compact />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedSidebarLesson(lesson);
+                            setShowSidebar(true);
+                          }}
+                          className="rounded-full bg-teal/10 px-2 py-0.5 text-[10px] font-bold text-teal-deep transition hover:bg-teal hover:text-white inline-flex items-center gap-1"
+                          title="Apri riepilogo rapido nel pannello laterale"
+                        >
+                          <Zap className="h-3 w-3" /> Modifiche veloci
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedLessonForEdit(lesson);
+                          }}
+                          className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-ink-soft transition hover:bg-slate-200 hover:text-ink inline-flex items-center gap-1"
+                          title="Apri configurazione completa"
+                        >
+                          <Settings2 className="h-3 w-3" /> Configurazione
+                        </button>
+                      </div>
                     </div>
                     <p className="mt-2 text-base font-bold text-ink">{lesson.title}</p>
                     <p className="text-xs text-ink-soft">
                       {course?.title}
                       {teacher ? ` · ${teacher.name}` : ""}
                       {room ? ` · ${room.name}` : ""}
+                      {course && (
+                        <span className="ml-2 font-semibold text-teal-deep">
+                          · +{course.studentCount ?? 0} alunni
+                        </span>
+                      )}
                     </p>
                   </li>
                 );
@@ -341,9 +465,33 @@ export default function AdminHomeClient() {
           </div>
         </div>
 
-        <aside className="space-y-4">
-          <div className="glass rounded-[1.5rem] p-5">
-            <h2 className="font-display text-lg font-bold text-ink">Prossime lezioni</h2>
+        {showSidebar && (
+          <aside className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold uppercase tracking-[0.14em] text-ink-soft">
+                Riepilogo laterale
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowSidebar(false)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-line/70 bg-white/80 px-2.5 py-1 text-xs font-semibold text-ink-soft transition hover:border-line hover:bg-white hover:text-ink"
+                title="Comprimi riquadro"
+              >
+                <PanelRightClose className="h-3.5 w-3.5" />
+                <span>Comprimi</span>
+              </button>
+            </div>
+
+            {selectedSidebarLesson && (
+              <QuickLessonSummarySidebar
+                lesson={selectedSidebarLesson}
+                onClose={() => setSelectedSidebarLesson(null)}
+                onOpenFullEdit={(l) => setSelectedLessonForEdit(l)}
+              />
+            )}
+
+            <div className="glass rounded-[1.5rem] p-5">
+              <h2 className="font-display text-lg font-bold text-ink">Prossime lezioni</h2>
             <ul className="mt-3 space-y-3">
               {upcomingLessons.map((lesson) => {
                 const course = getCourse(lesson.courseId);
@@ -351,7 +499,8 @@ export default function AdminHomeClient() {
                 return (
                   <li
                     key={lesson.id}
-                    className="rounded-xl border border-line/60 bg-white/70 px-3 py-2.5"
+                    onClick={() => setSelectedLessonForEdit(lesson)}
+                    className="cursor-pointer rounded-xl border border-line/60 bg-white/70 px-3 py-2.5 transition hover:border-teal/50 hover:bg-white hover:shadow-2xs"
                   >
                     <p className="text-[10px] font-bold uppercase tracking-wide text-ink-soft">
                       {lesson.date} · {lesson.startTime}
@@ -462,8 +611,9 @@ export default function AdminHomeClient() {
                 </Link>
               );
             })}
-          </div>
-        </aside>
+            </div>
+          </aside>
+        )}
       </div>
 
       <QuickLessonModal
@@ -471,6 +621,14 @@ export default function AdminHomeClient() {
         date={quickAddDate ?? selectedDate ?? todayStr}
         onClose={() => setQuickAddDate(null)}
         onSaved={(d) => setSelectedDate(d)}
+      />
+
+      <LessonDetailEditModal
+        open={Boolean(selectedLessonForEdit)}
+        lesson={selectedLessonForEdit}
+        onClose={() => setSelectedLessonForEdit(null)}
+        onSelectDate={(d) => setSelectedDate(d)}
+        onSaved={() => setSelectedLessonForEdit(null)}
       />
     </div>
   );

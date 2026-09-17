@@ -1,16 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock3, Table } from "lucide-react";
 import { useCalendar } from "@/lib/calendar/CalendarProvider";
 import {
   lessonDetailLine,
   lessonCourseColor,
   maxChipsForView,
+  schoolAbbrev,
 } from "@/lib/calendar/calendar-display";
 import { DayNoteIndicator, DayNotesPanel } from "@/components/calendar/DayNotesPanel";
 import { LessonChip, LessonChipList } from "@/components/calendar/LessonChip";
+import { ModalityBadge } from "@/components/calendar/ModalityBadge";
 import {
+  COURSE_CATEGORY_LABELS,
   MONTH_NAMES,
   WEEKDAY_SHORT,
   formatDayLabel,
@@ -35,6 +38,7 @@ const VIEW_LABELS: Record<CalendarViewMode, string> = {
   week: "Settimana",
   month: "Mese",
   year: "Anno",
+  tabular: "Tabulare",
 };
 
 function useDayBorderClass(
@@ -93,6 +97,7 @@ export function CalendarPlanner({
   showQuickFilters = true,
   lessonFilters: controlledLessonFilters,
   onLessonFiltersChange,
+  onSelectLesson,
 }: {
   year: number;
   month: number;
@@ -120,10 +125,13 @@ export function CalendarPlanner({
   showQuickFilters?: boolean;
   lessonFilters?: CalendarLessonFilters;
   onLessonFiltersChange?: (filters: CalendarLessonFilters) => void;
+  /** Selezione/apertura lezione per visualizzazione o modifica */
+  onSelectLesson?: (lesson: Lesson) => void;
 }) {
   const { state, getCourse, getTeacher, getRoom, getSchool, getDayNotes } =
     useCalendar();
   const [view, setView] = useState<CalendarViewMode>(defaultView);
+  const [tabularOnlyLessons, setTabularOnlyLessons] = useState(false);
   const [internalLessonFilters, setInternalLessonFilters] = useState(
     EMPTY_CALENDAR_LESSON_FILTERS
   );
@@ -161,6 +169,50 @@ export function CalendarPlanner({
 
   const anchor = selectedDate ?? `${year}-${String(month + 1).padStart(2, "0")}-01`;
 
+  const daysInMonthCount = useMemo(
+    () => new Date(year, month + 1, 0).getDate(),
+    [year, month]
+  );
+
+  const monthDaysList = useMemo(() => {
+    return Array.from({ length: daysInMonthCount }, (_, i) => {
+      const day = i + 1;
+      return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    });
+  }, [year, month, daysInMonthCount]);
+
+  const tabularCourses = useMemo(() => {
+    let list = state.courses;
+    if (lessonFilters.courseId) {
+      list = list.filter((c) => c.id === lessonFilters.courseId);
+    }
+    const monthPrefix = `${year}-${String(month + 1).padStart(2, "0")}`;
+    const courseLessonCounts = new Map<string, number>();
+    for (const lesson of sourceLessons) {
+      if (lesson.date.startsWith(monthPrefix)) {
+        courseLessonCounts.set(
+          lesson.courseId,
+          (courseLessonCounts.get(lesson.courseId) ?? 0) + 1
+        );
+      }
+    }
+
+    return [...list].sort((a, b) => {
+      const countA = courseLessonCounts.get(a.id) ?? 0;
+      const countB = courseLessonCounts.get(b.id) ?? 0;
+      if (countA > 0 && countB === 0) return -1;
+      if (countA === 0 && countB > 0) return 1;
+      if (a.status === "attivo" && b.status !== "attivo") return -1;
+      if (a.status !== "attivo" && b.status === "attivo") return 1;
+      return a.title.localeCompare(b.title);
+    });
+  }, [state.courses, lessonFilters.courseId, sourceLessons, year, month]);
+
+  const tabularDays = useMemo(() => {
+    if (!tabularOnlyLessons) return monthDaysList;
+    return monthDaysList.filter((date) => (lessonsByDate.get(date) ?? []).length > 0);
+  }, [tabularOnlyLessons, monthDaysList, lessonsByDate]);
+
   const navigate = (delta: number) => {
     if (view === "day") {
       const next = shiftDay(anchor, delta);
@@ -176,7 +228,7 @@ export function CalendarPlanner({
       onChangeMonth(d.getFullYear(), d.getMonth());
       return;
     }
-    if (view === "month") {
+    if (view === "month" || view === "tabular") {
       const next = shiftMonth(year, month, delta);
       onChangeMonth(next.year, next.month);
       return;
@@ -344,15 +396,19 @@ export function CalendarPlanner({
                 return (
                   <div
                     key={lesson.id}
-                    className="rounded-xl border border-line/60 bg-white/80 p-3"
+                    onClick={() => onSelectLesson?.(lesson)}
+                    className="group cursor-pointer rounded-xl border border-line/60 bg-white/80 p-3 transition hover:border-teal/50 hover:bg-white hover:shadow-xs"
                     style={{ borderLeftWidth: 4, borderLeftColor: color }}
                   >
                     <LessonChip
                       lesson={lesson}
                       getCourse={getCourse}
                       getTeacher={getTeacher}
+                      getSchool={getSchool}
+                      getRoom={getRoom}
                       size="md"
                       className="mb-2 inline-flex w-auto"
+                      onSelectLesson={onSelectLesson}
                     />
                     <p className="text-sm font-bold text-ink">
                       {getCourse(lesson.courseId)?.title ?? lesson.title}
@@ -417,9 +473,12 @@ export function CalendarPlanner({
                       lessons={lessons}
                       getCourse={getCourse}
                       getTeacher={getTeacher}
+                      getSchool={getSchool}
+                      getRoom={getRoom}
                       max={maxChipsForView("week")}
                       size="xs"
                       highlightTeacherId={highlightTeacherId}
+                      onSelectLesson={onSelectLesson}
                     />
                   </div>
                 </button>
@@ -485,9 +544,12 @@ export function CalendarPlanner({
                       lessons={lessons}
                       getCourse={getCourse}
                       getTeacher={getTeacher}
+                      getSchool={getSchool}
+                      getRoom={getRoom}
                       max={maxChipsForView("month")}
                       size="xs"
                       highlightTeacherId={highlightTeacherId}
+                      onSelectLesson={onSelectLesson}
                     />
                   </span>
                 </button>
@@ -576,6 +638,327 @@ export function CalendarPlanner({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {view === "tabular" && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-line/70 bg-white/70 px-4 py-2.5 shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="grid h-7 w-7 place-items-center rounded-lg bg-teal/10 text-teal-deep">
+                <Table className="h-4 w-4" />
+              </span>
+              <div>
+                <p className="text-xs font-bold text-ink">
+                  Vista Tabulare · Giorni per Corsi
+                </p>
+                <p className="text-[11px] text-ink-soft">
+                  {tabularDays.length} giorni · {tabularCourses.length} corsi in colonna
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setTabularOnlyLessons(false)}
+                className={`rounded-full px-3 py-1 text-xs font-bold transition ${
+                  !tabularOnlyLessons
+                    ? "bg-teal text-white shadow-sm"
+                    : "border border-line/70 bg-white text-ink-soft hover:text-ink"
+                }`}
+              >
+                Tutti i giorni ({monthDaysList.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setTabularOnlyLessons(true)}
+                className={`rounded-full px-3 py-1 text-xs font-bold transition ${
+                  tabularOnlyLessons
+                    ? "bg-teal text-white shadow-sm"
+                    : "border border-line/70 bg-white text-ink-soft hover:text-ink"
+                }`}
+              >
+                Solo con lezioni (
+                {monthDaysList.filter((d) => (lessonsByDate.get(d) ?? []).length > 0).length}
+                )
+              </button>
+            </div>
+          </div>
+
+          <div className="relative max-h-[720px] overflow-auto rounded-2xl border border-line/80 bg-white/60 shadow-sm backdrop-blur">
+            <table className="w-full border-collapse text-left">
+              <thead>
+                <tr className="border-b border-line/80 bg-slate-50/95 text-xs text-ink">
+                  <th className="sticky left-0 top-0 z-30 min-w-[160px] border-r border-line/80 bg-slate-100/95 p-3.5 backdrop-blur">
+                    <span className="font-display text-xs font-bold uppercase tracking-wider text-ink">
+                      Giorno
+                    </span>
+                    <span className="block text-[10px] font-normal text-ink-soft">
+                      Riga per data
+                    </span>
+                  </th>
+                  {tabularCourses.map((course) => {
+                    const teacher = getTeacher(course.teacherId);
+                    const monthLessonsCount = sourceLessons.filter(
+                      (l) =>
+                        l.courseId === course.id &&
+                        l.date.startsWith(`${year}-${String(month + 1).padStart(2, "0")}`)
+                    ).length;
+
+                    return (
+                      <th
+                        key={course.id}
+                        className="sticky top-0 z-20 min-w-[240px] max-w-[290px] border-r border-line/70 bg-slate-50/95 p-3.5 align-top backdrop-blur"
+                      >
+                        <div className="flex items-start gap-2">
+                          <span
+                            className="mt-1 h-3 w-3 shrink-0 rounded-full shadow-sm ring-2 ring-white"
+                            style={{ backgroundColor: course.color }}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p
+                              className="truncate font-display text-sm font-bold text-ink"
+                              title={course.title}
+                            >
+                              {course.title}
+                            </p>
+                            <p className="text-[11px] font-medium text-ink-soft">
+                              Docente: {teacher?.name ?? "—"}
+                            </p>
+                            {course.description && (
+                              <p
+                                className="mt-1 line-clamp-2 text-[10px] leading-tight text-ink-soft/90"
+                                title={course.description}
+                              >
+                                {course.description}
+                              </p>
+                            )}
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              <span className="rounded bg-teal/10 px-1.5 py-0.5 text-[9px] font-bold text-teal-deep">
+                                {COURSE_CATEGORY_LABELS[course.category] ?? course.category}
+                              </span>
+                              <span className="text-[10px] font-semibold text-ink-soft">
+                                {monthLessonsCount} lez. nel mese
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line/60">
+                {tabularDays.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={tabularCourses.length + 1}
+                      className="p-12 text-center text-sm text-ink-soft"
+                    >
+                      Nessun giorno con lezioni programmato in questo mese.
+                    </td>
+                  </tr>
+                ) : (
+                  tabularDays.map((date) => {
+                    const label = formatDayLabel(date);
+                    const isCurrentDay = isToday(date);
+                    const isSelected = selectedDate === date;
+                    const meta = dayMeta(date);
+                    const allDayLessons = dayLessonsFor(date);
+
+                    return (
+                      <tr
+                        key={date}
+                        className={`group transition ${
+                          isCurrentDay
+                            ? "bg-teal/5"
+                            : isSelected
+                              ? "bg-teal/10"
+                              : "hover:bg-slate-50/60"
+                        }`}
+                      >
+                        <td
+                          className={`sticky left-0 z-10 border-r border-line/80 p-3 align-top backdrop-blur ${
+                            isCurrentDay
+                              ? "bg-teal/15 font-bold"
+                              : isSelected
+                                ? "bg-teal/20 font-bold"
+                                : "bg-white/95 group-hover:bg-white"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => onSelectDate(date)}
+                            onDoubleClick={(e) => {
+                              e.preventDefault();
+                              onSelectDate(date);
+                              onQuickAddLesson?.(date);
+                            }}
+                            className="flex w-full flex-col text-left"
+                          >
+                            <div className="flex items-center justify-between gap-1.5">
+                              <span
+                                className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
+                                  isCurrentDay
+                                    ? "bg-teal text-white shadow-sm"
+                                    : isSelected
+                                      ? "bg-teal/25 text-teal-deep"
+                                      : "bg-slate-100 text-ink"
+                                }`}
+                              >
+                                {label.day}
+                              </span>
+                              <div className="flex items-center gap-1">
+                                {meta.noteCount > 0 && (
+                                  <DayNoteIndicator count={meta.noteCount} />
+                                )}
+                                {meta.overlap && (
+                                  <span
+                                    className="h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-red-200"
+                                    title="Conflitto / accavallamento lezioni!"
+                                  />
+                                )}
+                              </div>
+                            </div>
+                            <span className="mt-1 text-xs font-bold uppercase tracking-wider text-ink">
+                              {label.weekday}
+                            </span>
+                            <span className="text-[10px] text-ink-soft">
+                              {date}
+                            </span>
+                            {allDayLessons.length > 0 && (
+                              <span className="mt-1.5 inline-block rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-ink-soft">
+                                {allDayLessons.length} lez. tot
+                              </span>
+                            )}
+                          </button>
+                        </td>
+
+                        {tabularCourses.map((course) => {
+                          const lessons = allDayLessons.filter(
+                            (l) => l.courseId === course.id
+                          );
+
+                          return (
+                            <td
+                              key={course.id}
+                              className="border-r border-line/60 p-2.5 align-top transition hover:bg-white/90"
+                            >
+                              {lessons.length > 0 ? (
+                                <div className="space-y-2">
+                                  {lessons.map((lesson) => {
+                                    const teacher = getTeacher(lesson.teacherId);
+                                    const room = lesson.roomId
+                                      ? getRoom(lesson.roomId)
+                                      : undefined;
+                                    const school = course
+                                      ? getSchool(course.schoolId)
+                                      : undefined;
+                                    const schoolSigla = school
+                                      ? schoolAbbrev(school.name, 3)
+                                      : "";
+                                    const studentCount =
+                                      course?.studentCount ??
+                                      course?.studentIds?.length ??
+                                      0;
+
+                                    return (
+                                      <div
+                                        key={lesson.id}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onSelectDate(date);
+                                          onSelectLesson?.(lesson);
+                                        }}
+                                        onDoubleClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          onSelectDate(date);
+                                          onQuickAddLesson?.(date);
+                                        }}
+                                        className="cursor-pointer rounded-xl border border-line/80 bg-white p-2.5 shadow-sm transition hover:border-teal/60 hover:shadow"
+                                        style={{
+                                          borderLeftWidth: 4,
+                                          borderLeftColor: course.color,
+                                        }}
+                                      >
+                                        <div className="mb-2">
+                                          <LessonChip
+                                            lesson={lesson}
+                                            getCourse={getCourse}
+                                            getTeacher={getTeacher}
+                                            getSchool={getSchool}
+                                            getRoom={getRoom}
+                                            size="sm"
+                                            onSelectLesson={onSelectLesson}
+                                          />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-1.5">
+                                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-teal-deep">
+                                            <Clock3 className="h-3 w-3" />
+                                            {lesson.startTime} – {lesson.endTime}
+                                          </span>
+                                          <ModalityBadge
+                                            modality={lesson.modality}
+                                            compact
+                                          />
+                                        </div>
+                                        <p className="mt-1 text-xs font-bold leading-snug text-ink">
+                                          {lesson.title}
+                                        </p>
+                                        <p className="mt-0.5 text-[10px] text-ink-soft">
+                                          {teacher ? teacher.name : ""}
+                                          {room ? ` · ${room.name}` : ""}
+                                        </p>
+                                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 border-t border-line/50 pt-1 text-[10px] text-ink-soft">
+                                          {schoolSigla && (
+                                            <span className="rounded bg-slate-100 px-1 py-0.2 font-bold text-ink">
+                                              {schoolSigla}
+                                            </span>
+                                          )}
+                                          {studentCount > 0 && (
+                                            <span className="font-semibold text-teal-deep">
+                                              👥 {studentCount} alunni
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => onSelectDate(date)}
+                                  onDoubleClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    onSelectDate(date);
+                                    onQuickAddLesson?.(date);
+                                  }}
+                                  className="group/cell flex min-h-[44px] w-full items-center justify-center rounded-lg text-xs text-ink-soft/30 transition hover:bg-teal/5"
+                                  title="Doppio clic per aggiungere lezione in questo giorno"
+                                >
+                                  <span className="text-[10px] font-semibold text-teal-deep opacity-0 transition group-hover/cell:opacity-80">
+                                    + Aggiungi
+                                  </span>
+                                </button>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {enableNotes && selectedDate && (
+            <DayNotesPanel date={selectedDate} compact />
+          )}
         </div>
       )}
 
