@@ -183,8 +183,14 @@ export function CalendarPlanner({
 
   const tabularCourses = useMemo(() => {
     let list = state.courses;
-    if (lessonFilters.courseId) {
-      list = list.filter((c) => c.id === lessonFilters.courseId);
+    if (lessonFilters.courseIds.length > 0) {
+      list = list.filter((c) => lessonFilters.courseIds.includes(c.id));
+    }
+    if (lessonFilters.schoolIds.length > 0) {
+      list = list.filter((c) => lessonFilters.schoolIds.includes(c.schoolId));
+    }
+    if (lessonFilters.teacherIds.length > 0) {
+      list = list.filter((c) => lessonFilters.teacherIds.includes(c.teacherId));
     }
     const monthPrefix = `${year}-${String(month + 1).padStart(2, "0")}`;
     const courseLessonCounts = new Map<string, number>();
@@ -206,7 +212,7 @@ export function CalendarPlanner({
       if (a.status !== "attivo" && b.status === "attivo") return 1;
       return a.title.localeCompare(b.title);
     });
-  }, [state.courses, lessonFilters.courseId, sourceLessons, year, month]);
+  }, [state.courses, lessonFilters, sourceLessons, year, month]);
 
   const tabularDays = useMemo(() => {
     if (!tabularOnlyLessons) return monthDaysList;
