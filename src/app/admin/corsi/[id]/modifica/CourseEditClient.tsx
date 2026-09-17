@@ -7,6 +7,7 @@ import { useCalendar } from "@/lib/calendar/CalendarProvider";
 import {
   COURSE_CATEGORY_LABELS,
   COURSE_COLORS,
+  COURSE_PRESET_COLORS,
   MODALITY_LABELS,
   STATUS_LABELS,
   courseTeacherIds,
@@ -232,19 +233,29 @@ export default function CourseEditClient({ courseId }: { courseId: string }) {
             <label className="block text-xs font-bold uppercase tracking-wide text-ink-soft">
               Colore calendario
             </label>
-            <div className="flex flex-wrap gap-2">
-              {COURSE_COLORS.map((color) => (
+            <div className="flex flex-wrap items-center gap-2">
+              {COURSE_PRESET_COLORS.map((color) => (
                 <button
                   key={color}
                   type="button"
                   onClick={() => setDraft((d) => ({ ...d, color }))}
-                  className={`h-9 w-9 rounded-full border-2 transition ${
-                    draft.color === color ? "border-ink scale-110" : "border-transparent"
+                  className={`h-8 w-8 rounded-full border-2 transition-transform transform hover:scale-110 ${
+                    draft.color === color ? "border-ink scale-110 ring-2 ring-teal/50" : "border-white"
                   }`}
                   style={{ backgroundColor: color }}
                   title={color}
                 />
               ))}
+              <div className="flex items-center gap-1.5 ml-1">
+                <input
+                  type="color"
+                  value={draft.color}
+                  onChange={(e) => setDraft((d) => ({ ...d, color: e.target.value }))}
+                  className="h-8 w-8 cursor-pointer rounded-full border border-line bg-transparent p-0.5"
+                  title="Colore personalizzato"
+                />
+                <span className="text-xs font-mono font-bold text-ink-soft">{draft.color}</span>
+              </div>
             </div>
           </div>
         </div>

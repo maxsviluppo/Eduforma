@@ -20,6 +20,7 @@ import {
 import { useCalendar } from "@/lib/calendar/CalendarProvider";
 import {
   COURSE_CATEGORY_LABELS,
+  COURSE_PRESET_COLORS,
   findOverlapsForDraft,
   formatTimeRange,
   lessonDurationMinutes,
@@ -85,6 +86,7 @@ export function LessonDetailEditModal({
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [studentCount, setStudentCount] = useState<number>(0);
+  const [courseColorState, setCourseColorState] = useState<string>("#0f8f8a");
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Overlap and delete modals
@@ -109,6 +111,7 @@ export function LessonDetailEditModal({
     setNotes(currentLesson.notes ?? "");
 
     const currentCourse = getCourse(currentLesson.courseId);
+    setCourseColorState(currentCourse?.color ?? "#0f8f8a");
     setStudentCount(
       currentCourse?.studentCount ??
         currentCourse?.studentIds?.length ??
@@ -192,6 +195,7 @@ export function LessonDetailEditModal({
 
       if (course) {
         updateCourse(course.id, {
+          color: courseColorState,
           studentCount: Math.max(0, Number(studentCount) || 0),
         });
       }
@@ -292,6 +296,45 @@ export function LessonDetailEditModal({
                   Modifica e salva per aggiornare il calendario
                 </span>
               </div>
+
+              {/* Course Color Selector */}
+              {course && (
+                <div className="rounded-xl border border-line/70 bg-slate-50/80 p-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft">
+                      Colore del Corso sul Calendario
+                    </label>
+                    <span className="text-[11px] font-mono font-bold text-ink-soft">
+                      {courseColorState}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {COURSE_PRESET_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setCourseColorState(c)}
+                        className={`h-7 w-7 rounded-full border-2 transition-transform transform hover:scale-110 shadow-2xs ${
+                          courseColorState === c
+                            ? "border-ink scale-110 ring-2 ring-teal/50"
+                            : "border-white"
+                        }`}
+                        style={{ backgroundColor: c }}
+                        title={`Imposta colore ${c}`}
+                      />
+                    ))}
+                    <div className="flex items-center gap-1.5 ml-1">
+                      <input
+                        type="color"
+                        value={courseColorState}
+                        onChange={(e) => setCourseColorState(e.target.value)}
+                        className="h-7 w-7 cursor-pointer rounded-full border border-line bg-transparent p-0.5"
+                        title="Colore personalizzato"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Title input */}
               <div>

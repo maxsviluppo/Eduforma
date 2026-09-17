@@ -64,6 +64,7 @@ export type NewCourseInput = {
   roomId?: string;
   schoolId: string;
   sessionsCount: number;
+  color?: string;
   /** Hourly band for generated lessons */
   band?: "mattina" | "pomeriggio";
   /** Explicit start/end, overrides band defaults */
@@ -430,7 +431,8 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
       const dates = manualLessons.length
         ? manualLessons.map((l) => l.date)
         : collectLessonDates(startDate, sessions, weekdays);
-      const color = COURSE_COLORS[prev.courses.length % COURSE_COLORS.length];
+      const color =
+        input.color || COURSE_COLORS[prev.courses.length % COURSE_COLORS.length];
       const endDate = dates[dates.length - 1] ?? startDate;
 
       const courseTeacherIds =

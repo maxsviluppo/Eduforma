@@ -120,16 +120,14 @@ export default function DocenteHomeClient() {
             {problems.reasons[0]}
           </p>
         )}
-        {lesson.dadLink && (
-          <a
-            href={lesson.dadLink}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-3 inline-flex min-h-[40px] items-center gap-2 rounded-full bg-azure/10 px-3.5 py-2 text-xs font-bold text-azure"
+        {lesson.modality !== "aula" && (
+          <Link
+            href={`/docente/dad?lesson=${lesson.id}`}
+            className="mt-3 inline-flex min-h-[40px] items-center gap-2 rounded-full bg-teal/10 px-3.5 py-2 text-xs font-bold text-teal-deep hover:bg-teal hover:text-white transition"
           >
             <MonitorPlay className="h-4 w-4" />
-            Apri DAD
-          </a>
+            Apri Aula DAD
+          </Link>
         )}
       </li>
     );
@@ -168,14 +166,12 @@ export default function DocenteHomeClient() {
       )}
 
       {nextLive && (
-        <a
-          href={nextLive.dadLink}
-          target="_blank"
-          rel="noreferrer"
-          className="relative flex min-h-[120px] flex-col justify-end overflow-hidden rounded-[1.5rem] bg-gradient-to-br from-azure to-teal-deep p-5 text-white shadow-[0_16px_40px_rgba(59,130,196,0.35)] active:scale-[0.99]"
+        <Link
+          href={`/docente/dad?lesson=${nextLive.id}`}
+          className="relative flex min-h-[120px] flex-col justify-end overflow-hidden rounded-[1.5rem] bg-gradient-to-br from-azure to-teal-deep p-5 text-white shadow-[0_16px_40px_rgba(59,130,196,0.35)] transition hover:brightness-105 active:scale-[0.99]"
         >
           <p className="relative text-[10px] font-bold uppercase tracking-[0.16em] text-white/75">
-            Prossima DAD
+            Prossima DAD Live
           </p>
           <p className="relative mt-1 font-display text-xl font-bold leading-tight">
             {nextLive.title}
@@ -183,11 +179,11 @@ export default function DocenteHomeClient() {
           <p className="relative mt-1 text-sm text-white/80">
             {nextLive.date} · {nextLive.startTime}
           </p>
-          <span className="relative mt-4 inline-flex w-fit items-center gap-2 rounded-full bg-white px-3.5 py-2 text-xs font-bold text-azure">
+          <span className="relative mt-4 inline-flex w-fit items-center gap-2 rounded-full bg-white px-3.5 py-2 text-xs font-bold text-teal-deep">
             <PlayCircle className="h-4 w-4" />
-            Entra in call
+            Avvia Room DAD
           </span>
-        </a>
+        </Link>
       )}
 
       <MonthCalendar

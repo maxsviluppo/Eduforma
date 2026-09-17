@@ -174,6 +174,22 @@ export const COURSE_COLORS = [
   "#e11d48",
 ] as const;
 
+export const COURSE_PRESET_COLORS = [
+  "#0f8f8a", // Teal classico
+  "#0284c7", // Sky blue
+  "#3b82c4", // Ocean blue
+  "#6366f1", // Indigo
+  "#7c5cbf", // Viola
+  "#a855f7", // Porpora
+  "#d946ef", // Fuchsia
+  "#e11d48", // Rosa corallo
+  "#ea580c", // Arancio
+  "#d97706", // Ambra
+  "#059669", // Smeraldo
+  "#0891b2", // Ciano
+  "#1e293b", // Slate scuro
+] as const;
+
 export const WEEKDAY_SHORT = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"] as const;
 
 export const MONTH_NAMES = [

@@ -14,7 +14,7 @@ import {
 import { autoScheduleLessonDates, hasTeacherTimeConflict } from "@/lib/calendar/auto-schedule";
 import { useCalendar } from "@/lib/calendar/CalendarProvider";
 import type { CourseCategory, Lesson, Modality } from "@/lib/calendar/types";
-import { COURSE_CATEGORY_LABELS, addHoursToTime, findTeacherOverlaps, toIsoDate } from "@/lib/calendar/types";
+import { COURSE_CATEGORY_LABELS, COURSE_PRESET_COLORS, addHoursToTime, findTeacherOverlaps, toIsoDate } from "@/lib/calendar/types";
 import {
   COMMITMENT_BAND_LABELS,
   COMMITMENT_BAND_STYLES,
@@ -179,6 +179,7 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
     modality: "ibrida" as Modality,
     totalHours: 16,
     studentCount: 1,
+    color: COURSE_PRESET_COLORS[0] as string,
   });
 
   const [selectedTeacherIds, setSelectedTeacherIds] = useState<string[]>([]);
@@ -1081,6 +1082,7 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
       modality: form.modality,
       roomId: form.modality === "dad" ? undefined : roomId,
       schoolId: form.schoolId,
+      color: form.color,
       sessionsCount: plannedLessons.length,
       manualLessons,
       preferredDates: [
@@ -1231,6 +1233,36 @@ export function CourseCreateModal({ open, onClose, onCreated }: Props) {
                 </option>
               ))}
             </select>
+
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft">
+                Colore identificativo del corso sul calendario
+              </label>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {COURSE_PRESET_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, color: c }))}
+                    className={`h-7 w-7 rounded-full border-2 transition-transform transform hover:scale-110 shadow-xs ${
+                      form.color === c ? "border-ink scale-110 ring-2 ring-teal/50" : "border-white"
+                    }`}
+                    style={{ backgroundColor: c }}
+                    title={`Colore ${c}`}
+                  />
+                ))}
+                <div className="flex items-center gap-1.5 ml-1">
+                  <input
+                    type="color"
+                    value={form.color}
+                    onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
+                    className="h-7 w-7 cursor-pointer rounded-full border border-line bg-transparent p-0.5"
+                    title="Scegli colore personalizzato"
+                  />
+                  <span className="text-[11px] font-mono font-bold text-ink-soft">{form.color}</span>
+                </div>
+              </div>
+            </div>
 
             <select
               value={form.schoolId}
