@@ -22,12 +22,15 @@ import {
   Send,
   Settings,
   Share2,
+  ShieldCheck,
   Smile,
   Sparkles,
+  UserCheck,
   Users,
   Video,
   VideoOff,
   Volume2,
+  Wand2,
   X,
   Zap,
 } from "lucide-react";
@@ -186,9 +189,12 @@ export default function DocenteDadClient() {
   ]);
   const [inputText, setInputText] = useState("");
 
-  // Video element ref for real webcam
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  // Video element ref for real webcam (pre-flight and live)
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
+  const liveVideoRef = useRef<HTMLVideoElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const [hasCamPermission, setHasCamPermission] = useState<boolean | null>(null);
+  const [blurBackground, setBlurBackground] = useState(false);
 
   // Timer when live
   useEffect(() => {
@@ -202,37 +208,86 @@ export default function DocenteDadClient() {
     return () => clearInterval(interval);
   }, [isLive]);
 
-  // Request actual webcam if available
+  // Request actual webcam if available (runs in pre-flight AND in live if isCamOn)
   useEffect(() => {
-    if (!isLive || !isCamOn) {
+    if (!isCamOn) {
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach((t) => t.stop());
         mediaStreamRef.current = null;
       }
+      if (previewVideoRef.current) previewVideoRef.current.srcObject = null;
+      if (liveVideoRef.current) liveVideoRef.current.srcObject = null;
       return;
     }
 
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    let isSubscribed = true;
+
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
       navigator.mediaDevices
-        .getUserMedia({ video: true, audio: false })
+        .getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false,
+        })
         .then((stream) => {
+          if (!isSubscribed) {
+            stream.getTracks().forEach((t) => t.stop());
+            return;
+          }
           mediaStreamRef.current = stream;
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
+          setHasCamPermission(true);
+
+          if (previewVideoRef.current) {
+            previewVideoRef.current.srcObject = stream;
+          }
+          if (liveVideoRef.current) {
+            liveVideoRef.current.srcObject = stream;
           }
         })
         .catch(() => {
-          // Fallback to simulated stream without error
+          if (isSubscribed) {
+            setHasCamPermission(false);
+          }
         });
     }
 
     return () => {
+      isSubscribed = false;
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach((t) => t.stop());
         mediaStreamRef.current = null;
       }
     };
+  }, [isCamOn]);
+
+  // Keep video ref updated when transitioning between pre-flight and live
+  useEffect(() => {
+    if (mediaStreamRef.current && isCamOn) {
+      if (!isLive && previewVideoRef.current) {
+        previewVideoRef.current.srcObject = mediaStreamRef.current;
+      } else if (isLive && liveVideoRef.current) {
+        liveVideoRef.current.srcObject = mediaStreamRef.current;
+      }
+    }
   }, [isLive, isCamOn]);
+
+  // Enrolled students list for the selected course
+  const enrolledStudents = useMemo(() => {
+    if (!activeCourse) return [];
+    const courseStudentIds = activeCourse.studentIds ?? [];
+    const allStudents = state.students ?? [];
+    const matched = allStudents.filter((s) => courseStudentIds.includes(s.id));
+    if (matched.length > 0) return matched;
+    // If studentIds is empty or demo data has generic count, generate roster entries from studentCount
+    const count = activeCourse.studentCount || 3;
+    return Array.from({ length: count }, (_, idx) => {
+      const demoFallback = DEFAULT_STUDENTS[idx % DEFAULT_STUDENTS.length];
+      return {
+        id: `enrolled-${idx + 1}`,
+        name: demoFallback?.name ?? `Studente ${idx + 1}`,
+        email: `studente.${idx + 1}@corso.it`,
+      };
+    });
+  }, [activeCourse, state.students]);
 
   const formatTimer = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -411,21 +466,25 @@ export default function DocenteDadClient() {
                 </div>
               )}
 
-              {/* Share link with students */}
-              <div className="rounded-2xl border border-line/70 bg-slate-50/80 p-4 space-y-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-ink-soft flex items-center gap-1.5">
-                  <Share2 className="h-3.5 w-3.5 text-teal-deep" />
-                  Link d&apos;accesso per gli alunni
-                </span>
-                <p className="text-xs text-ink-soft">
-                  Gli studenti registrati possono entrare dal loro calendario o
-                  usando questo link diretto:
+              {/* Accesso Riservato alla Piattaforma */}
+              <div className="rounded-2xl border border-teal/30 bg-teal/5 p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-teal-deep flex items-center gap-1.5">
+                    <ShieldCheck className="h-4 w-4" />
+                    Accesso Riservato alla Piattaforma
+                  </span>
+                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                    Solo Iscritti
+                  </span>
+                </div>
+                <p className="text-xs text-ink-soft leading-relaxed">
+                  L&apos;accesso alle aule virtuali è protetto: solo gli studenti iscritti possono accedere autenticandosi dalla propria <strong>Area Studente</strong>. I link esterni grezzi non consentono l&apos;accesso ad utenti non censiti.
                 </p>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 pt-1">
                   <input
                     type="text"
                     readOnly
-                    value={`https://meet.aulanova.it/room/${activeLesson?.id ?? "dad-live"}`}
+                    value={`https://meet.aulanova.it/studente?room=${activeLesson?.id ?? "dad-live"}`}
                     className="flex-1 rounded-xl border border-line bg-white px-3 py-2 text-xs font-mono text-ink-soft select-all"
                   />
                   <button
@@ -445,37 +504,127 @@ export default function DocenteDadClient() {
                   </button>
                 </div>
               </div>
+
+              {/* Lista Alunni Iscritti al Corso */}
+              <div className="rounded-2xl border border-line/70 bg-white/95 p-4 space-y-3 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-teal-deep flex items-center gap-1.5">
+                    <Users className="h-4 w-4" />
+                    Alunni Iscritti alla Room ({enrolledStudents.length})
+                  </span>
+                  <span className="text-[11px] font-semibold text-ink-soft">
+                    Registro classe
+                  </span>
+                </div>
+
+                <div className="divide-y divide-line/50 rounded-xl border border-line/60 bg-slate-50/50 max-h-56 overflow-y-auto">
+                  {enrolledStudents.map((st, idx) => (
+                    <div
+                      key={st.id}
+                      className="flex items-center justify-between p-2.5 hover:bg-white transition"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className="h-7 w-7 shrink-0 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-xs"
+                          style={{
+                            backgroundColor: [
+                              "#0284c7",
+                              "#ec4899",
+                              "#8b5cf6",
+                              "#10b981",
+                              "#f59e0b",
+                              "#0f8f8a",
+                            ][idx % 6],
+                          }}
+                        >
+                          {st.name.charAt(0)}
+                        </div>
+                        <div className="truncate">
+                          <p className="text-xs font-bold text-ink truncate">
+                            {st.name}
+                          </p>
+                          <p className="text-[10px] text-ink-soft truncate">
+                            {st.email}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                          <UserCheck className="h-3 w-3" />
+                          Pronto
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 
           {/* Right: Device pre-check & Start Button (5 cols) */}
           <div className="space-y-5 lg:col-span-5">
             <div className="glass rounded-[1.8rem] p-6 space-y-4">
-              <span className="text-xs font-bold uppercase tracking-wider text-teal-deep">
-                2. Collaudo Dispositivi
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-teal-deep">
+                  2. Collaudo Dispositivi & Cam
+                </span>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-ink-soft">
+                  Anteprima Live
+                </span>
+              </div>
 
-              {/* Camera Preview Box */}
-              <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-slate-900 border border-line flex items-center justify-center text-white">
+              {/* Camera Preview Box with real webcam & background blur */}
+              <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-slate-900 border-2 border-line flex items-center justify-center text-white shadow-inner">
                 {isCamOn ? (
-                  <div className="flex flex-col items-center gap-2 text-center p-4">
-                    <div className="h-14 w-14 rounded-full bg-teal/20 border-2 border-teal flex items-center justify-center text-teal-300 font-display font-bold text-xl">
-                      {teacher?.name ? teacher.name.charAt(0) : "D"}
-                    </div>
-                    <p className="text-sm font-bold">{teacher?.name}</p>
-                    <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300 border border-emerald-500/30">
-                      ✓ Webcam pronta
-                    </span>
+                  <div className="relative h-full w-full flex items-center justify-center overflow-hidden">
+                    <video
+                      ref={previewVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className={`h-full w-full object-cover transition duration-300 ${
+                        blurBackground ? "blur-md scale-105" : ""
+                      }`}
+                    />
+
+                    {/* Teacher overlay placeholder if browser webcam track isn't permitted or active */}
+                    {!mediaStreamRef.current && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-slate-800/60 to-slate-950/80 p-4 text-center">
+                        <div className="h-14 w-14 rounded-full bg-teal/20 border-2 border-teal flex items-center justify-center text-teal-300 font-display font-bold text-xl shadow-lg mb-1">
+                          {teacher?.name ? teacher.name.charAt(0) : "D"}
+                        </div>
+                        <p className="text-sm font-bold text-white">{teacher?.name ?? "Docente"}</p>
+                        {hasCamPermission === false ? (
+                          <span className="mt-1 rounded-full bg-amber-500/20 px-2.5 py-0.5 text-[10px] font-bold text-amber-300 border border-amber-500/30">
+                            ⚠ Permesso webcam negato dal browser
+                          </span>
+                        ) : (
+                          <span className="mt-1 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[10px] font-bold text-emerald-300 border border-emerald-500/30">
+                            ✓ Webcam connessa
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Bokeh Blur Indicator Badge */}
+                    {blurBackground && (
+                      <div className="absolute top-2 right-2 flex items-center gap-1 rounded-lg bg-teal-900/80 border border-teal-500/50 px-2 py-0.5 text-[10px] font-bold text-teal-200 backdrop-blur-sm shadow-sm">
+                        <Wand2 className="h-3 w-3" />
+                        <span>Sfondo Sfocato (Bokeh)</span>
+                      </div>
+                    )}
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center gap-1 text-slate-400">
-                    <VideoOff className="h-8 w-8" />
-                    <p className="text-xs">Webcam disattivata</p>
+                  <div className="flex flex-col items-center gap-1 text-slate-400 p-6">
+                    <VideoOff className="h-9 w-9 text-slate-500" />
+                    <p className="text-xs font-semibold">Webcam disattivata</p>
+                    <p className="text-[10px] text-slate-500">Attiva la cam per testare l&apos;inquadratura</p>
                   </div>
                 )}
 
-                {/* Status overlays */}
-                <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-lg bg-black/60 px-2 py-1 text-[10px] text-white backdrop-blur-xs">
+                {/* Status overlay (Mic indicator) */}
+                <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-lg bg-black/70 px-2.5 py-1 text-[10px] text-white backdrop-blur-sm border border-white/10">
                   {isMicOn ? (
                     <Mic className="h-3 w-3 text-emerald-400" />
                   ) : (
@@ -485,7 +634,7 @@ export default function DocenteDadClient() {
                 </div>
               </div>
 
-              {/* Pre-flight Toggle Buttons */}
+              {/* Pre-flight Toggle Buttons: Mic, Cam & Sfondo Sfocato */}
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -520,6 +669,24 @@ export default function DocenteDadClient() {
                   )}
                   <span>{isCamOn ? "Webcam Attiva" : "Disattivata"}</span>
                 </button>
+
+                {/* Pulsante Sfocatura Sfondo (Bokeh Blur) */}
+                <button
+                  type="button"
+                  onClick={() => setBlurBackground((prev) => !prev)}
+                  className={`col-span-2 flex items-center justify-center gap-2 rounded-xl border p-2.5 text-xs font-bold transition ${
+                    blurBackground
+                      ? "border-teal bg-teal/10 text-teal-deep shadow-xs ring-1 ring-teal/30"
+                      : "border-line bg-white text-ink-soft hover:text-ink hover:bg-slate-50"
+                  }`}
+                >
+                  <Wand2 className="h-4 w-4 text-teal-deep" />
+                  <span>
+                    {blurBackground
+                      ? "✓ Sfondo Sfocato Attivo (Privacy & Bokeh)"
+                      : "Sfoca Sfondo Webcam (Effetto Bokeh)"}
+                  </span>
+                </button>
               </div>
 
               {/* Master Start DAD Button */}
@@ -534,7 +701,7 @@ export default function DocenteDadClient() {
                     <span>AVVIA SESSIONE DAD LIVE</span>
                   </div>
                   <p className="text-[11px] text-white/80">
-                    Apre la stanza virtuale e permette agli alunni di connettersi
+                    Apre la stanza virtuale e connette la classe in tempo reale
                   </p>
                 </button>
               </div>
@@ -628,14 +795,16 @@ export default function DocenteDadClient() {
                       </button>
                     </div>
                   ) : isCamOn ? (
-                    // Real webcam feed with simulated fallback
-                    <div className="relative h-full w-full flex items-center justify-center">
+                    // Real webcam feed with simulated fallback & bokeh blur
+                    <div className="relative h-full w-full flex items-center justify-center overflow-hidden">
                       <video
-                        ref={videoRef}
+                        ref={liveVideoRef}
                         autoPlay
                         playsInline
                         muted
-                        className="h-full w-full object-cover"
+                        className={`h-full w-full object-cover transition duration-300 ${
+                          blurBackground ? "blur-md scale-105" : ""
+                        }`}
                       />
                       {/* Realistic teacher overlay if video track is not active */}
                       {!mediaStreamRef.current && (

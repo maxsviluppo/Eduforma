@@ -2,7 +2,18 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Clock3, MonitorPlay, PlayCircle, StickyNote } from "lucide-react";
+import {
+  AlertTriangle,
+  BookOpen,
+  Building2,
+  Clock3,
+  FileText,
+  MapPin,
+  MonitorPlay,
+  PlayCircle,
+  StickyNote,
+  Users,
+} from "lucide-react";
 import { useCalendar } from "@/lib/calendar/CalendarProvider";
 import { ModalityBadge } from "@/components/calendar/ModalityBadge";
 import { MonthCalendar } from "@/components/calendar/MonthCalendar";
@@ -14,7 +25,7 @@ import {
   teacherExcludedDates,
   teacherPreferredDates,
 } from "@/lib/calendar/teacher-availability";
-import { isToday, toIsoDate, MONTH_NAMES } from "@/lib/calendar/types";
+import { isToday, toIsoDate, MONTH_NAMES, COURSE_CATEGORY_LABELS } from "@/lib/calendar/types";
 
 export default function DocenteHomeClient() {
   const {
@@ -23,6 +34,7 @@ export default function DocenteHomeClient() {
     getLessonsForTeacher,
     getCourse,
     getRoom,
+    getSchool,
     weekDates,
     state,
     getDayNotes,
@@ -75,26 +87,36 @@ export default function DocenteHomeClient() {
   const renderLesson = (lesson: (typeof myLessons)[number], showDate?: boolean) => {
     const course = getCourse(lesson.courseId);
     const room = lesson.roomId ? getRoom(lesson.roomId) : undefined;
+    const school = course?.schoolId ? getSchool(course.schoolId) : undefined;
+    const studentCount = course?.studentCount ?? course?.studentIds?.length ?? 0;
     const problems = getLessonProblems(lesson, teacher);
 
     return (
       <li
         key={lesson.id}
-        className={`rounded-2xl border bg-white/80 p-3.5 ${
+        className={`rounded-2xl border bg-white/90 p-4 transition shadow-2xs ${
           problems?.severity === "critical"
-            ? "border-amber-400 bg-amber-50/50 ring-1 ring-amber-300/50"
-            : "border-line/70"
+            ? "border-amber-400 bg-amber-50/60 ring-1 ring-amber-300/50"
+            : "border-line/70 hover:border-teal/50"
         }`}
         style={{
-          borderLeftWidth: 4,
+          borderLeftWidth: 5,
           borderLeftColor: course?.color ?? "#0f8f8a",
         }}
       >
-        <div className="flex items-start justify-between gap-2">
-          <span className="inline-flex items-center gap-1.5 text-sm font-bold text-teal-deep">
-            <Clock3 className="h-4 w-4" />
-            {lesson.startTime} – {lesson.endTime}
-          </span>
+        {/* Header: Time, Date & Modality Badge */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 text-sm font-bold text-teal-deep">
+              <Clock3 className="h-4 w-4" />
+              {lesson.startTime} – {lesson.endTime}
+            </span>
+            {showDate && (
+              <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-bold uppercase text-ink-soft">
+                {lesson.date}
+              </span>
+            )}
+          </div>
           <div className="flex flex-wrap items-center gap-1.5">
             {lesson.needsReschedule && (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-950">
@@ -105,30 +127,99 @@ export default function DocenteHomeClient() {
             <ModalityBadge modality={lesson.modality} compact />
           </div>
         </div>
-        {showDate && (
-          <p className="mt-1 text-[10px] font-bold uppercase text-ink-soft">
-            {lesson.date}
-          </p>
-        )}
-        <p className="mt-2 text-base font-bold text-ink">{lesson.title}</p>
-        <p className="text-xs text-ink-soft">
-          {course?.title}
-          {room ? ` · ${room.name}` : ""}
-        </p>
+
+        {/* Lesson Title & Course info */}
+        <div className="mt-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            {course?.category && (
+              <span
+                className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white"
+                style={{ backgroundColor: course.color ?? "#0f8f8a" }}
+              >
+                {COURSE_CATEGORY_LABELS[course.category] ?? course.category}
+              </span>
+            )}
+            <span className="text-xs font-semibold text-ink-soft">
+              {course?.title}
+            </span>
+          </div>
+          <p className="mt-1 text-base font-bold text-ink">{lesson.title}</p>
+        </div>
+
+        {/* Complete Details: Students count, Room, School/City */}
+        <div className="mt-3 grid grid-cols-1 gap-2 rounded-xl bg-slate-50/80 p-2.5 text-xs text-ink-soft sm:grid-cols-2 border border-line/60">
+          {/* Numero Alunni */}
+          <div className="flex items-center gap-2">
+            <span className="grid h-6 w-6 place-items-center rounded-lg bg-teal/10 text-teal-deep">
+              <Users className="h-3.5 w-3.5" />
+            </span>
+            <span>
+              Partecipanti:{" "}
+              <strong className="text-ink font-bold">
+                +{studentCount} alunni {studentCount === 1 ? "iscritto" : "iscritti"}
+              </strong>
+            </span>
+          </div>
+
+          {/* Aula / Piattaforma */}
+          <div className="flex items-center gap-2">
+            <span className="grid h-6 w-6 place-items-center rounded-lg bg-azure/10 text-azure">
+              <Building2 className="h-3.5 w-3.5" />
+            </span>
+            <span>
+              Luogo:{" "}
+              <strong className="text-ink font-bold">
+                {room ? room.name : lesson.modality === "aula" ? "Aula non assegnata" : "Aula Virtuale DAD"}
+              </strong>
+            </span>
+          </div>
+
+          {/* Sede Formativa / Città */}
+          {school && (
+            <div className="flex items-center gap-2 sm:col-span-2">
+              <span className="grid h-6 w-6 place-items-center rounded-lg bg-amber-500/10 text-amber-700">
+                <MapPin className="h-3.5 w-3.5" />
+              </span>
+              <span className="truncate">
+                Sede: <strong className="text-ink font-semibold">{school.name}</strong>
+                {school.city ? ` · ${school.city}` : ""}
+              </span>
+            </div>
+          )}
+
+          {/* Note specifiche della lezione se presenti */}
+          {lesson.notes && (
+            <div className="flex items-start gap-2 sm:col-span-2 border-t border-line/50 pt-1.5 text-[11px] text-amber-900">
+              <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+              <span className="italic leading-snug">Nota: {lesson.notes}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Warning / Conflict notes */}
         {problems && (
-          <p className="mt-2 text-xs font-semibold text-amber-900">
-            {problems.reasons[0]}
-          </p>
+          <div className="mt-2.5 flex items-center gap-1.5 rounded-lg bg-amber-100/70 px-2.5 py-1.5 text-xs font-semibold text-amber-900">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            <span>{problems.reasons[0]}</span>
+          </div>
         )}
-        {lesson.modality !== "aula" && (
-          <Link
-            href={`/docente/dad?lesson=${lesson.id}`}
-            className="mt-3 inline-flex min-h-[40px] items-center gap-2 rounded-full bg-teal/10 px-3.5 py-2 text-xs font-bold text-teal-deep hover:bg-teal hover:text-white transition"
-          >
-            <MonitorPlay className="h-4 w-4" />
-            Apri Aula DAD
-          </Link>
-        )}
+
+        {/* Action Button: DAD or details */}
+        <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-line/50">
+          <span className="text-[11px] font-semibold text-ink-soft">
+            Stato: {course?.status === "attivo" ? "Corso in svolgimento" : course?.status === "concluso" ? "Corso concluso" : "In programmazione"}
+          </span>
+
+          {lesson.modality !== "aula" && (
+            <Link
+              href={`/docente/dad?lesson=${lesson.id}`}
+              className="inline-flex min-h-[38px] items-center gap-2 rounded-full bg-teal px-4 py-2 text-xs font-bold text-white shadow-sm hover:brightness-105 transition active:scale-95"
+            >
+              <MonitorPlay className="h-4 w-4" />
+              Apri Aula DAD
+            </Link>
+          )}
+        </div>
       </li>
     );
   };
