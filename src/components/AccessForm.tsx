@@ -45,6 +45,14 @@ export function AccessForm({ role }: { role: keyof typeof copy }) {
     [role, state.teachers]
   );
 
+  const studentHint = useMemo(
+    () =>
+      role === "studente"
+        ? (state.students ?? []).map((s) => s.email).slice(0, 3).join(" · ")
+        : "",
+    [role, state.students]
+  );
+
   return (
     <div className="glass-strong w-full max-w-md rounded-[1.8rem] p-7 md:p-8">
       <BrandMark compact={false} href="/" />
@@ -52,7 +60,12 @@ export function AccessForm({ role }: { role: keyof typeof copy }) {
       <p className="mt-2 text-sm text-ink-soft">{meta.subtitle}</p>
       {role === "docente" && teacherHint && (
         <p className="mt-2 text-[11px] text-ink-soft">
-          Demo: {teacherHint}
+          Demo docenti: {teacherHint}
+        </p>
+      )}
+      {role === "studente" && studentHint && (
+        <p className="mt-2 text-[11px] text-ink-soft">
+          Demo allievi: {studentHint}
         </p>
       )}
 
@@ -126,9 +139,9 @@ export function AccessForm({ role }: { role: keyof typeof copy }) {
         </button>
       </form>
 
-      <p className="mt-5 text-center text-xs text-ink-soft">
+      <div className="mt-5 text-center text-xs text-ink-soft">
         {role === "docente" ? (
-          <>
+          <div>
             Oppure scegli un docente:{" "}
             {state.teachers.slice(0, 3).map((t, i) => (
               <span key={t.id}>
@@ -145,9 +158,38 @@ export function AccessForm({ role }: { role: keyof typeof copy }) {
                 </button>
               </span>
             ))}
-          </>
+          </div>
+        ) : role === "studente" ? (
+          <div className="space-y-1.5">
+            <div>
+              Oppure entra come allievo demo:{" "}
+              {state.students.slice(0, 3).map((s, i) => (
+                <span key={s.id}>
+                  {i > 0 && " · "}
+                  <button
+                    type="button"
+                    className="font-semibold text-teal-deep underline-offset-2 hover:underline"
+                    onClick={() => {
+                      setCurrentStudentId(s.id);
+                      window.location.href = meta.demo;
+                    }}
+                  >
+                    {s.name.split(" ")[0]}
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div>
+              <Link
+                href={meta.demo}
+                className="text-[11px] font-medium text-ink-soft underline-offset-2 hover:underline"
+              >
+                o entra subito come ospite
+              </Link>
+            </div>
+          </div>
         ) : (
-          <>
+          <div>
             Demo aperta —{" "}
             <Link
               href={meta.demo}
@@ -155,9 +197,9 @@ export function AccessForm({ role }: { role: keyof typeof copy }) {
             >
               entra senza login
             </Link>
-          </>
+          </div>
         )}
-      </p>
+      </div>
     </div>
   );
 }

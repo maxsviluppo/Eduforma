@@ -9,8 +9,6 @@ import { SceneAtmosphere } from "@/components/SceneAtmosphere";
 import { RoleAccessCard } from "@/components/RoleAccessCard";
 import { ROLES, SITE } from "@/lib/site";
 
-const PUBLIC_ROLES = ROLES.filter((role) => role.id !== "studente");
-
 const features = [
   {
     icon: CalendarDays,
@@ -56,15 +54,14 @@ export default function HomePage() {
         <section id="accessi" className="mx-auto max-w-6xl px-5 pb-20 md:px-8">
           <div className="mb-8 max-w-xl">
             <h2 className="font-display text-3xl font-bold text-ink md:text-4xl">
-              Due ambienti. Un sistema.
+              I tre ambienti della piattaforma
             </h2>
             <p className="mt-3 text-ink-soft">
-              Home di accesso dedicate ad amministrazione e docenti —
-              autorizzazioni gestite dall&apos;admin.
+              Portali dedicati per amministrazione, corpo docenti e studenti iscritti con accessi e strumenti personalizzati.
             </p>
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            {PUBLIC_ROLES.map((role) => (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {ROLES.map((role) => (
               <RoleAccessCard key={role.id} {...role} />
             ))}
           </div>
